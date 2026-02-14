@@ -1,5 +1,6 @@
 import sys
 import asyncio
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -8,8 +9,14 @@ from config import CORS_ORIGINS, BACKEND_PORT
 from database import init_db
 from api import scans, reports
 
-# Set Windows event loop policy before anything else
+# Force UTF-8 encoding on Windows to prevent charmap codec errors
 if sys.platform == 'win32':
+    # Set UTF-8 mode for all file operations
+    os.environ.setdefault('PYTHONUTF8', '1')
+    # Reconfigure stdout/stderr to use UTF-8
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+    # Set Windows event loop policy
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 

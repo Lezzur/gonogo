@@ -150,9 +150,14 @@ async def capture_page_data(
 
 async def run_lighthouse(url: str, scan_id: str) -> Dict[str, Any]:
     """Run Lighthouse CLI and return parsed results."""
+    import os
     output_path = SCREENSHOTS_DIR / scan_id / "lighthouse.json"
 
     try:
+        # Set UTF-8 environment for subprocess
+        env = os.environ.copy()
+        env['PYTHONUTF8'] = '1'
+
         process = await asyncio.create_subprocess_exec(
             "lighthouse", url,
             "--output=json",
@@ -160,13 +165,14 @@ async def run_lighthouse(url: str, scan_id: str) -> Dict[str, Any]:
             "--chrome-flags=--headless --no-sandbox",
             "--only-categories=performance,accessibility,best-practices,seo",
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            env=env
         )
 
         await asyncio.wait_for(process.communicate(), timeout=120)
 
         if output_path.exists():
-            with open(output_path) as f:
+            with open(output_path, encoding="utf-8") as f:
                 return json.load(f)
     except Exception as e:
         print(f"Lighthouse failed: {e}")
