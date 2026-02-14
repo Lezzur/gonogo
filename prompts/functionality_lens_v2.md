@@ -65,7 +65,13 @@ Images with loading failures:
 
 **ONLY create findings if:**
 
-1. **JavaScript errors exist in console_errors array** → Report the error, its location, and user impact
+1. **JavaScript errors exist in console_errors array** → Report the error BUT:
+   - **Check if functionality actually fails** - Some errors are caught/handled
+   - If error is during login BUT agent successfully authenticated (check recon data for authenticated pages) → severity is LOW, note "error is handled"
+   - If error is during login AND agent failed to authenticate → severity is CRITICAL
+   - If error is on a feature that still works → severity is LOW/MEDIUM
+   - **Do NOT assume all console errors are critical** - verify actual user impact
+
 2. **Network requests show 404/500 status** → Report the broken URL and source page
 3. **Images have loaded: false** → Report missing/broken images
 4. **Forms have no submit action** → Report non-functional forms (only if form.action is empty/missing)
@@ -75,6 +81,7 @@ Images with loading failures:
 - Hypothetical issues based on common problems
 - Inferred problems from tech stack patterns
 - Missing features (unless intent_analysis explicitly states they should exist)
+- Console errors that are handled/recovered (unless they still cause visible failures)
 
 ## Output Format
 
@@ -117,10 +124,18 @@ Images with loading failures:
 
 ## Severity Guide
 
-- **critical**: Core user journey is blocked (e.g., checkout fails, login broken)
-- **high**: Important feature broken (e.g., search returns error, form validation missing)
-- **medium**: Minor feature broken (e.g., secondary button doesn't respond)
-- **low**: Edge case or cosmetic functional issue
+- **critical**: Core user journey is COMPLETELY BLOCKED and functionality DOES NOT WORK (e.g., checkout fails, login broken AND agent could not authenticate)
+- **high**: Important feature broken OR significantly degraded (e.g., search returns error, major delay)
+- **medium**: Minor feature broken OR console error present but functionality still works
+- **low**: Console error that is handled/recovered, edge case, or cosmetic issue
+
+**IMPORTANT:** Just because a console error exists doesn't make it critical. Verify:
+- Did the functionality actually fail for the user?
+- Is the error caught and handled?
+- Does the feature still work despite the error?
+
+Example: "TypeError during login" BUT agent successfully authenticated → **LOW severity** (error is handled)
+Example: "TypeError during login" AND agent failed to authenticate → **CRITICAL severity** (error blocks login)
 
 ## Calibration
 

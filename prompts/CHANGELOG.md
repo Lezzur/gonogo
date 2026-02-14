@@ -1,5 +1,23 @@
 # Prompt Changelog
 
+## v2.1 — Severity Calibration Update (2026-02-14)
+
+**Problem:** v2 functionality lens was reporting ALL console errors as critical, even when functionality still worked. Example: "TypeError: Failed to fetch" during login was marked CRITICAL even though user could successfully log in (error was handled/recovered).
+
+**Changes in v2.1:**
+
+Updated `functionality_lens_v2.md`:
+- Added nuance to console error evaluation - presence of error ≠ automatic critical severity
+- Severity now based on **actual functionality impact**, not just error existence
+- Added rule: Check if feature works despite error before assigning severity
+- Updated severity guide with examples distinguishing handled vs blocking errors
+
+**Example:**
+- ❌ v2.0: "TypeError during login" + error in console → CRITICAL (incorrect)
+- ✅ v2.1: "TypeError during login" BUT agent authenticated successfully → LOW (error handled)
+
+---
+
 ## v2 — Anti-Hallucination Update (2026-02-14)
 
 **Problem:** v1 prompts allowed the LLM too much creative freedom. Agent was generating plausible-sounding but fabricated findings - inventing console errors, guessing file paths, and reporting common framework issues without evidence.

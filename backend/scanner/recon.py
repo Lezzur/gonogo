@@ -353,28 +353,66 @@ async def run_reconnaissance(
                         await submit_button.click()
                         print(f"  ✓ Clicked submit button")
 
-                        # Wait for navigation or network idle
+                        # Wait for navigation or network idle with longer timeout for async auth
                         try:
-                            await page.wait_for_load_state("networkidle", timeout=15000)
+                            await page.wait_for_load_state("networkidle", timeout=20000)
                         except Exception:
-                            await page.wait_for_timeout(3000)
+                            # If networkidle times out, wait a bit for any async operations
+                            await page.wait_for_timeout(5000)
 
-                        # Verify login success
+                        # Verify login success with multiple indicators
                         post_submit_url = page.url
+                        login_successful = False
+
+                        # Check 1: URL changed (redirect away from login page)
                         if post_submit_url != pre_submit_url:
                             print(f"  ✅ Login successful - redirected from {pre_submit_url} to {post_submit_url}")
+                            login_successful = True
                         else:
-                            # Check for error messages
-                            error_element = await page.query_selector('[class*="error" i], [class*="alert" i], [role="alert"]')
-                            if error_element:
-                                error_text = await error_element.inner_text()
-                                print(f"  ❌ Login failed - error message: {error_text[:100]}")
+                            # Check 2: No longer on login page (in-place auth like SPA)
+                            if not any(path in page.url.lower() for path in ['/login', '/signin', '/sign-in', '/auth']):
+                                print(f"  ✅ Login successful - navigated away from login page")
+                                login_successful = True
                             else:
-                                # Check if we're still on login page
-                                if any(path in page.url.lower() for path in ['/login', '/signin', '/sign-in', '/auth']):
-                                    print(f"  ⚠️  Still on login page after submit - login may have failed")
+                                # Check 3: Look for authenticated user indicators (sign out button, user menu, profile)
+                                auth_indicators = await page.query_selector(
+                                    'button:has-text("Sign Out"), button:has-text("sign out"), button:has-text("SIGN OUT"), '
+                                    'button:has-text("Log Out"), button:has-text("log out"), button:has-text("LOGOUT"), '
+                                    'a:has-text("Sign Out"), a:has-text("Log Out"), '
+                                    '[class*="user-menu" i], [class*="profile" i], [data-testid*="user" i]'
+                                )
+
+                                if auth_indicators:
+                                    print(f"  ✅ Login successful - authenticated UI elements detected")
+                                    login_successful = True
                                 else:
-                                    print(f"  ✅ Login appears successful (no redirect but no error)")
+                                    # Check 4: Look for error messages (only if they have actual text)
+                                    error_element = await page.query_selector('[class*="error" i]:not(:empty), [class*="alert" i]:not(:empty), [role="alert"]:not(:empty)')
+                                    if error_element:
+                                        error_text = (await error_element.inner_text()).strip()
+                                        if error_text and len(error_text) > 0:
+                                            print(f"  ❌ Login failed - error message: {error_text[:100]}")
+                                        else:
+                                            # Empty error element - might be transient, check cookies
+                                            cookies = await page.context.cookies()
+                                            auth_cookies = [c for c in cookies if any(auth in c['name'].lower() for auth in ['auth', 'session', 'token', 'user'])]
+                                            if auth_cookies:
+                                                print(f"  ✅ Login appears successful - authentication cookies present")
+                                                login_successful = True
+                                            else:
+                                                print(f"  ⚠️  Login status unclear - still on login page, no clear success indicators")
+                                    else:
+                                        # No error message - check for auth cookies as last resort
+                                        cookies = await page.context.cookies()
+                                        auth_cookies = [c for c in cookies if any(auth in c['name'].lower() for auth in ['auth', 'session', 'token', 'user', 'sb-'])]
+                                        if auth_cookies:
+                                            print(f"  ✅ Login successful - authentication cookies present ({len(auth_cookies)} found)")
+                                            login_successful = True
+                                        else:
+                                            print(f"  ⚠️  Still on login page after submit - login may have failed")
+
+                        if not login_successful:
+                            print(f"  ⚠️  Continuing scan anyway - agent will scan public pages")
                     else:
                         print(f"  ⚠️  Could not find submit button")
 
