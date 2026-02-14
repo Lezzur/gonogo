@@ -6,7 +6,7 @@ interface ScanHistoryProps {
 }
 
 function VerdictBadge({ verdict }: { verdict?: string }) {
-  if (!verdict) return <span className="text-gray-400">-</span>
+  if (!verdict) return null
 
   const styles = {
     'GO': 'bg-green-100 text-green-800',
@@ -57,7 +57,7 @@ function formatDuration(seconds?: number): string {
 
 function ChevronRight() {
   return (
-    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
     </svg>
   )
@@ -68,7 +68,7 @@ export default function ScanHistory({ scans }: ScanHistoryProps) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">No scans yet. Run your first scan!</p>
-        <Link to="/" className="text-green-600 hover:text-green-700 font-medium mt-2 inline-block">
+        <Link to="/" className="text-green-700 underline hover:text-green-800 font-medium mt-2 inline-block">
           Start a scan
         </Link>
       </div>
@@ -144,7 +144,7 @@ export default function ScanHistory({ scans }: ScanHistoryProps) {
                   {scan.overall_score !== undefined ? (
                     <span className="font-medium">{scan.overall_score}</span>
                   ) : (
-                    <span className="text-gray-400">-</span>
+                    <span className="text-gray-600">-</span>
                   )}
                 </td>
                 <td className="py-3 px-4 text-center text-sm text-gray-600">

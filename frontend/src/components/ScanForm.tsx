@@ -15,6 +15,7 @@ export default function ScanForm() {
   const [testRoute, setTestRoute] = useState('')
   const [authUsername, setAuthUsername] = useState('')
   const [authPassword, setAuthPassword] = useState('')
+  const [showAuth, setShowAuth] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -64,45 +65,51 @@ export default function ScanForm() {
           required
           className="w-full px-4 py-3 text-lg border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
         />
-        <p className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-          <span className="font-medium">⚠️ Requires login?</span> If your app is behind authentication,
-          provide credentials below so GoNoGo can scan the actual features (not just the login page).
-        </p>
-      </div>
+        </div>
 
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h2 className="text-sm font-medium text-gray-900 mb-3">Authentication (if required)</h2>
-        <div className="space-y-3">
-          <div>
-            <label htmlFor="authUsername" className="block text-sm font-medium text-gray-700 mb-1">
-              Email / Username
-            </label>
-            <input
-              type="text"
-              id="authUsername"
-              value={authUsername}
-              onChange={(e) => setAuthUsername(e.target.value)}
-              placeholder="user@example.com"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            />
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={showAuth}
+            onChange={(e) => setShowAuth(e.target.checked)}
+            className="w-4 h-4 text-green-600 rounded focus:ring-green-500"
+          />
+          <span className="text-sm font-medium text-gray-900">Requires authentication</span>
+        </label>
+        {showAuth && (
+          <div className="space-y-3 mt-3 pt-3 border-t border-gray-200">
+            <div>
+              <label htmlFor="authUsername" className="block text-sm font-medium text-gray-700 mb-1">
+                Email / Username
+              </label>
+              <input
+                type="text"
+                id="authUsername"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                placeholder="user@example.com"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              />
+            </div>
+            <div>
+              <label htmlFor="authPassword" className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
+              <input
+                type="password"
+                id="authPassword"
+                value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              />
+            </div>
+            <p className="text-xs text-gray-600">
+              🔒 Credentials are used only for this scan and never stored.
+            </p>
           </div>
-          <div>
-            <label htmlFor="authPassword" className="block text-sm font-medium text-gray-700 mb-1">
-              Password
-            </label>
-            <input
-              type="password"
-              id="authPassword"
-              value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              placeholder="••••••••"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-            />
-          </div>
-          <p className="text-xs text-gray-500">
-            🔒 Credentials are used only for this scan and never stored.
-          </p>
-        </div>
+        )}
       </div>
 
       <div>
@@ -120,13 +127,13 @@ export default function ScanForm() {
         />
         <p className="mt-1 text-sm text-gray-500">
           Your key is used only for this scan and never stored.{' '}
-          <span className="text-gray-400">
+          <span className="text-gray-600">
             Get one from{' '}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-green-700 underline hover:text-green-800">
               Google AI Studio
             </a>
             {' '}or{' '}
-            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-green-700 underline hover:text-green-800">
               Anthropic Console
             </a>
           </span>
