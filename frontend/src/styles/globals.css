@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+.verdict-go {
+  @apply bg-go text-white;
+}
+
+.verdict-nogo {
+  @apply bg-nogo text-white;
+}
+
+.verdict-conditions {
+  @apply bg-conditions text-gray-900;
+}
