@@ -55,6 +55,16 @@ async def run_scan(
             auth_credentials=auth_credentials
         )
 
+        # Track auth status for synthesis
+        auth_status = "no_auth_required"
+        if auth_credentials:
+            # Check if we got authenticated pages (more than just login page)
+            authenticated_pages = [p for p in recon_data.pages if '/login' not in p.url.lower() and '/signin' not in p.url.lower()]
+            if authenticated_pages:
+                auth_status = "auth_successful"
+            else:
+                auth_status = "auth_attempted_unclear"
+
         await progress_manager.send_progress(
             scan_id, "step_0_recon", "Reconnaissance complete", 15
         )
@@ -137,6 +147,7 @@ async def run_scan(
         synthesis = await synthesize_findings(
             findings=all_findings,
             intent_analysis=intent_analysis,
+            auth_status=auth_status,
             api_key=api_key,
             llm_provider=llm_provider
         )

@@ -38,11 +38,19 @@ async def synthesize_findings(
     findings: List[Finding],
     intent_analysis: IntentAnalysis,
     api_key: str,
-    llm_provider: str = "gemini"
+    llm_provider: str = "gemini",
+    auth_status: str = "no_auth_required"
 ) -> SynthesisResult:
     """Step 9: Synthesize findings, deduplicate, score, and determine verdict."""
 
     client = LLMClient(api_key, llm_provider)
+
+    # Format auth status for prompt
+    auth_status_text = {
+        "no_auth_required": "No authentication was required for this scan.",
+        "auth_successful": "Authentication was SUCCESSFUL - agent was able to access authenticated pages. Any auth-related console errors were handled/recovered.",
+        "auth_attempted_unclear": "Authentication was attempted but status unclear."
+    }.get(auth_status, auth_status)
 
     # Group findings by lens
     findings_by_lens = {}
@@ -61,7 +69,8 @@ async def synthesize_findings(
         intent_analysis=intent_analysis.model_dump(),
         findings_by_lens=findings_by_lens,
         total_findings=len(findings),
-        severity_counts=severity_counts
+        severity_counts=severity_counts,
+        auth_status=auth_status_text
     )
 
     result = await client.generate(prompt, model_tier="pro")

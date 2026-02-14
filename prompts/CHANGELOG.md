@@ -1,5 +1,34 @@
 # Prompt Changelog
 
+## v2.3 — Severity Calibration in Synthesis (2026-02-14)
+
+**Problem:** Console errors were being marked CRITICAL even when functionality worked.
+Example: "TypeError: Failed to fetch" during login was CRITICAL despite successful authentication.
+
+**Root cause:** Synthesis prompt (v1) didn't consider whether errors were actually blocking.
+Rule was simply "any critical finding = NO-GO" without verifying actual impact.
+
+**Changes:**
+
+1. Created `synthesis_v2.md` with severity re-evaluation logic:
+   - Downgrade to LOW if console error exists BUT functionality works
+   - Only CRITICAL if user CANNOT complete primary task
+   - Pass auth_status to synthesis so it knows if login succeeded
+
+2. Updated orchestrator to track auth status:
+   - "auth_successful" if agent accessed authenticated pages
+   - "auth_attempted_unclear" if unclear
+   - "no_auth_required" if no credentials provided
+
+3. Updated synthesize_findings() to accept auth_status parameter
+
+**Expected behavior:**
+- Auth error + successful login → LOW severity (error handled)
+- Auth error + failed login → CRITICAL severity (actually blocked)
+- Verdict NO-GO only for ACTUALLY blocking issues
+
+---
+
 ## v2.2 — Complete Anti-Hallucination Overhaul (2026-02-14)
 
 **Problem:** Report still contained 5/7 hallucinated findings despite v2 prompts. Investigation revealed:
