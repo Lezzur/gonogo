@@ -111,7 +111,7 @@ Approximately $0.50 using Gemini API (with BYOK model).
 - **Browser Automation**: Playwright
 - **Performance**: Lighthouse CLI
 - **Accessibility**: axe-core
-- **LLM**: Gemini 2.5 Pro/Flash (primary), Claude (secondary)
+- **LLM**: Gemini 3 Pro/Flash Preview (primary), Claude (secondary)
 - **Database**: SQLite (V1)
 
 ## License
