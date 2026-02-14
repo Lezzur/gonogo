@@ -1,5 +1,5 @@
 import asyncio
-import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
 from sqlalchemy.orm import Session
@@ -38,7 +38,7 @@ async def run_scan(
 
         # Update status
         scan.status = "running"
-        scan.started_at = datetime.datetime.utcnow()
+        scan.started_at = datetime.now(timezone.utc)
         db.commit()
 
         # Step 0: Reconnaissance (No LLM)
@@ -186,7 +186,7 @@ async def run_scan(
 
         # Complete
         scan.status = "completed"
-        scan.completed_at = datetime.datetime.utcnow()
+        scan.completed_at = datetime.now(timezone.utc)
         scan.duration_seconds = (scan.completed_at - scan.started_at).total_seconds()
         scan.current_step = None
         scan.progress_message = "Scan complete"
@@ -202,7 +202,7 @@ async def run_scan(
         if scan:
             scan.status = "failed"
             scan.error_message = str(e)
-            scan.completed_at = datetime.datetime.utcnow()
+            scan.completed_at = datetime.now(timezone.utc)
             if scan.started_at:
                 scan.duration_seconds = (scan.completed_at - scan.started_at).total_seconds()
             db.commit()

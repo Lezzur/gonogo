@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Integer, Float, DateTime, JSON, Text
 from database import Base
-import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -8,8 +8,8 @@ class Scan(Base):
     __tablename__ = "scans"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    updated_at = Column(DateTime, onupdate=datetime.datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), onupdate=lambda: datetime.now(timezone.utc))
 
     # Input
     url = Column(String, nullable=False)
@@ -26,8 +26,8 @@ class Scan(Base):
     current_step = Column(String, nullable=True)
     progress_message = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     duration_seconds = Column(Float, nullable=True)
 
     # Results

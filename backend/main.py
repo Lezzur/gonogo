@@ -16,8 +16,8 @@ if sys.platform == 'win32':
     # Reconfigure stdout/stderr to use UTF-8
     sys.stdout.reconfigure(encoding='utf-8')
     sys.stderr.reconfigure(encoding='utf-8')
-    # Set Windows event loop policy
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    # Set Windows event loop policy - Selector required for Playwright subprocess support
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 @asynccontextmanager

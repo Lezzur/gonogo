@@ -1,9 +1,11 @@
 import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createScan } from '../api/client'
+import { useActiveScan } from '../context/ActiveScanContext'
 
 export default function ScanForm() {
   const navigate = useNavigate()
+  const { setActiveScan } = useActiveScan()
   const [url, setUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [llmProvider, setLlmProvider] = useState('gemini')
@@ -22,6 +24,7 @@ export default function ScanForm() {
     setIsSubmitting(true)
 
     try {
+      const normalizedUrl = url.startsWith('http') ? url : `https://${url}`
       const result = await createScan({
         url,
         api_key: apiKey,
@@ -32,6 +35,7 @@ export default function ScanForm() {
         auth_username: authUsername || undefined,
         auth_password: authPassword || undefined
       })
+      setActiveScan({ id: result.id, url: normalizedUrl })
       navigate(`/scan/${result.id}`)
     } catch (err) {
       setError('Failed to start scan. Please check your inputs and try again.')

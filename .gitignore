@@ -11,13 +11,11 @@ env/
 .env.local
 
 # Storage (V1 local)
-storage/screenshots/*
-storage/reports/*
-!storage/screenshots/.gitkeep
-!storage/reports/.gitkeep
+backend/storage/screenshots/
+backend/storage/reports/
 
 # Database
-data/*.db
+backend/data/*.db
 
 # Build outputs
 dist/

@@ -3,12 +3,14 @@ import { useParams, Link } from 'react-router-dom'
 import { getScan, ScanResult } from '../api/client'
 import ScanProgress from '../components/ScanProgress'
 import ScanResults from '../components/ScanResults'
+import { useActiveScan } from '../context/ActiveScanContext'
 
 export default function ScanPage() {
   const { scanId } = useParams<{ scanId: string }>()
   const [scan, setScan] = useState<ScanResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const { activeScan, clearActiveScan } = useActiveScan()
 
   const fetchScan = useCallback(async () => {
     if (!scanId) return
@@ -17,19 +19,25 @@ export default function ScanPage() {
       const data = await getScan(scanId)
       setScan(data)
       setLoading(false)
+
+      // Clear active scan if this scan is done
+      if (activeScan?.id === scanId && (data.status === 'completed' || data.status === 'failed')) {
+        clearActiveScan()
+      }
     } catch {
       setError('Failed to load scan')
       setLoading(false)
     }
-  }, [scanId])
+  }, [scanId, activeScan, clearActiveScan])
 
   useEffect(() => {
     fetchScan()
   }, [fetchScan])
 
   const handleComplete = useCallback(() => {
+    clearActiveScan()
     fetchScan()
-  }, [fetchScan])
+  }, [fetchScan, clearActiveScan])
 
   if (loading) {
     return (

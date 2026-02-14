@@ -1,13 +1,38 @@
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { ReactNode } from 'react'
+import { useActiveScan } from '../context/ActiveScanContext'
 
 interface LayoutProps {
   children: ReactNode
 }
 
 export default function Layout({ children }: LayoutProps) {
+  const { activeScan } = useActiveScan()
+  const location = useLocation()
+
+  const isOnActiveScan = activeScan && location.pathname === `/scan/${activeScan.id}`
+  const showActiveScanBanner = activeScan && !isOnActiveScan
+
   return (
     <div className="min-h-screen flex flex-col">
+      {showActiveScanBanner && (
+        <div className="bg-blue-600 text-white px-4 py-2">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              <span className="text-sm">
+                Scan in progress: <span className="font-medium">{new URL(activeScan.url).hostname}</span>
+              </span>
+            </div>
+            <Link
+              to={`/scan/${activeScan.id}`}
+              className="text-sm font-medium bg-white/20 hover:bg-white/30 px-3 py-1 rounded"
+            >
+              Return to scan
+            </Link>
+          </div>
+        </div>
+      )}
       <header className="border-b border-gray-200 bg-white">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
