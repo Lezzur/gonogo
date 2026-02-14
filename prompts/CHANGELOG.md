@@ -1,5 +1,38 @@
 # Prompt Changelog
 
+## v2.2 — Complete Anti-Hallucination Overhaul (2026-02-14)
+
+**Problem:** Report still contained 5/7 hallucinated findings despite v2 prompts. Investigation revealed:
+1. Only 3 of 6 evaluation lenses were updated to v2
+2. Performance, accessibility, and code_content lenses were still v1 (hallucinating)
+3. Report generation prompt was telling LLM to "guess file paths based on tech stack"
+
+**Evidence of hallucination:**
+- "Hero image causing slow LCP" → NO hero image exists on site
+- "/about page has invalid nesting" → /about returns 404
+- "/blog images missing sizes" → /blog returns 404
+- "Newsletter form at /#contact" → No contact section exists
+
+**Changes in v2.2:**
+
+Created v2 prompts for remaining lenses:
+- `performance_lens_v2.md` - Only report metrics from actual Lighthouse data
+- `accessibility_lens_v2.md` - Only report violations from actual axe-core data
+- `code_content_lens_v2.md` - Only report issues visible in recon data (meta tags, console logs)
+
+Updated report generation:
+- `report_a_generation_v1.md` - Added rule: DO NOT INVENT FILE PATHS
+
+**Key constraints added:**
+- Performance: "If no hero image in image_issues, DO NOT report hero image issues"
+- Accessibility: "If axe-core has zero violations, return empty findings array"
+- Code/Content: "If /about not in pages_scanned, DO NOT report /about issues"
+- Reports: "Only include file hints if they were in original evidence"
+
+**All 6 evaluation lenses now have v2 prompts with evidence-only constraints.**
+
+---
+
 ## v2.1 — Severity Calibration Update (2026-02-14)
 
 **Problem:** v2 functionality lens was reporting ALL console errors as critical, even when functionality still worked. Example: "TypeError: Failed to fetch" during login was marked CRITICAL even though user could successfully log in (error was handled/recovered).

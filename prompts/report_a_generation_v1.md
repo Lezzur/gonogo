@@ -78,10 +78,11 @@ Use this exact structure:
 ## Design Principles
 
 1. **Zero ambiguity**: Every instruction should be precise enough that a coding AI can act immediately
-2. **Include selectors**: CSS selectors, component names, file paths where possible
+2. **Include selectors**: CSS selectors from the evidence data ONLY
 3. **Include fix code**: Actual code snippets when relevant
 4. **No conversational tone**: Pure signal, maximum density
-5. **Assume tech stack**: Use the detected stack to suggest framework-specific fixes
+5. **DO NOT INVENT FILE PATHS**: Only include file hints if they were in the original finding evidence. If no file path was provided, write "File hint: Search codebase for [selector/component name]" instead of guessing paths like "src/components/X.tsx"
+6. **DO NOT ADD FINDINGS**: Only format the findings provided. Do not create new issues.
 
 ## Example Entry
 
