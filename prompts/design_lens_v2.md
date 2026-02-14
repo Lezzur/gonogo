@@ -65,6 +65,8 @@ Screenshot list:
 
 ## Output Format
 
+**IMPORTANT:** For color/typography issues, you MUST include actual values in raw_data.
+
 ```json
 {
   "findings": [
@@ -85,14 +87,16 @@ Screenshot list:
         "lighthouse_metric": null,
         "axe_violation": null,
         "raw_data": {
-          "observed_colors": ["#hex1", "#hex2"],
-          "observed_fonts": ["Font1", "Font2"],
+          "observed_colors": ["#3B82F6", "#2563EB"],
+          "color_issue": "Button A uses #3B82F6, Button B uses #2563EB - inconsistent",
+          "observed_fonts": ["Inter", "system-ui"],
+          "font_sizes": ["14px", "16px", "18px"],
           "measurements": "any quantifiable observations"
         }
       },
       "recommendation": {
         "human_readable": "Why this design choice hurts UX and what to change",
-        "ai_actionable": "Specific CSS/style changes IF tech stack is known"
+        "ai_actionable": "Specific CSS/style changes with ACTUAL VALUES. Example: 'Change bg-blue-500 to bg-blue-600' or 'Update color from #3B82F6 to #2563EB'"
       }
     }
   ]
@@ -136,22 +140,24 @@ Screenshot list:
 ```
 👆 **REJECT THIS** - Not specific or observable
 
-**GOOD FINDING (screenshot-observable):**
+**GOOD FINDING (screenshot-observable with actual values):**
 ```json
 {
-  "title": "Three different button styles used on homepage",
-  "description": "Visible in homepage_desktop.png: The 'Get Started' button is solid blue (#3B82F6), 'Learn More' is outlined blue, and 'Contact Us' is solid gray (#6B7280). This inconsistency makes the visual hierarchy confusing - it's unclear which action is primary.",
+  "title": "Inconsistent button colors: #3B82F6 vs #2563EB",
+  "description": "Visible in homepage_desktop.png: The 'Sign In' button uses #3B82F6 (bg-blue-500) while the 'Get Started' button uses #2563EB (bg-blue-600). This creates visual inconsistency in the primary action styling.",
   "evidence": {
     "page_url": "/",
     "screenshot_ref": "homepage_desktop.png",
-    "dom_selector": "section.hero button",
+    "dom_selector": "button[type='submit'], a.btn-primary",
     "raw_data": {
-      "button_styles": ["solid-blue", "outline-blue", "solid-gray"]
+      "observed_colors": ["#3B82F6", "#2563EB"],
+      "color_issue": "Sign In button: #3B82F6, Get Started button: #2563EB",
+      "tailwind_classes": ["bg-blue-500", "bg-blue-600"]
     }
   },
   "recommendation": {
-    "human_readable": "Pick one style for primary CTAs and stick with it. Recommend: solid blue for primary, outlined blue for secondary, remove gray button or make it tertiary text link.",
-    "ai_actionable": "Standardize button styles: .btn-primary (solid bg-blue-500), .btn-secondary (border-2 border-blue-500 bg-transparent), .btn-tertiary (text-blue-500 no-border). Apply to all buttons consistently."
+    "human_readable": "Pick one primary blue and use it everywhere. Recommend #2563EB (bg-blue-600) as it has better contrast.",
+    "ai_actionable": "Search for bg-blue-500 and replace with bg-blue-600, OR search for #3B82F6 and replace with #2563EB. Ensure all primary buttons use the same color."
   }
 }
 ```

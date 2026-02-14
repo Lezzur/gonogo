@@ -1,5 +1,29 @@
 # Prompt Changelog
 
+## v2.4 — Actionable Design Values in Reports (2026-02-14)
+
+**Problem:** Design findings like "different shades of blue" lacked actual hex values, making them non-actionable for AI agents implementing fixes.
+
+**Root cause:**
+1. design_lens_v2.md required values but they weren't being passed through
+2. report_a_generation didn't have a **Values:** field to display raw_data
+
+**Changes:**
+
+1. Updated `report_a_generation_v1.md` → v1.1:
+   - Added **Values:** field to finding template
+   - Added design principle #7: "INCLUDE RAW VALUES"
+   - Added design issue example with hex colors and Tailwind classes
+   - Updated model reference to gemini-3-pro-preview
+
+2. `design_lens_v2.md` already had correct raw_data requirements
+
+**Expected behavior:**
+- Design findings now include: `**Values:** Sign In button: #3B82F6 (bg-blue-500), Get Started: #2563EB (bg-blue-600)`
+- AI agents can search/replace with exact values instead of guessing
+
+---
+
 ## v2.3 — Severity Calibration in Synthesis (2026-02-14)
 
 **Problem:** Console errors were being marked CRITICAL even when functionality worked.
