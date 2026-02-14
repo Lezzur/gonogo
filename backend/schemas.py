@@ -93,6 +93,19 @@ class LinkAudit(BaseModel):
     anchor_text: str
 
 
+class ChatInteraction(BaseModel):
+    detected: bool = False
+    widget_type: Optional[str] = None  # e.g., "floating", "embedded", "modal"
+    selector: Optional[str] = None
+    could_open: bool = False
+    could_send_message: bool = False
+    got_response: bool = False
+    response_time_ms: Optional[int] = None
+    error: Optional[str] = None
+    console_errors_during_test: List[str] = []
+    screenshot_open: Optional[str] = None
+
+
 class PageData(BaseModel):
     url: str
     page_type: str
@@ -108,6 +121,7 @@ class PageData(BaseModel):
     form_elements: List[Dict[str, Any]] = []
     images: List[Dict[str, Any]] = []
     computed_styles: Dict[str, Any] = {}
+    chat_interaction: Optional[ChatInteraction] = None
 
 
 class ReconData(BaseModel):

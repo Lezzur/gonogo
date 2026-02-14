@@ -8,7 +8,7 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright, Page, Browser
 from config import SCREENSHOTS_DIR, MAX_DEEP_PAGES, MAX_SHALLOW_PAGES, MAX_SCAN_DURATION_SECONDS
-from schemas import ReconData, PageData, LinkAudit
+from schemas import ReconData, PageData, LinkAudit, ChatInteraction
 
 
 # Page type patterns
@@ -138,6 +138,10 @@ async def capture_page_data(
             }
         """)
 
+        # Test chat widgets
+        print(f"  🔍 Testing chat functionality on {url}...")
+        page_data.chat_interaction = await detect_and_test_chat(page, scan_id, url_slug)
+
     elif test_depth == "spot_check":
         # Just desktop screenshot
         desktop_path = screenshots_path / f"{url_slug}_desktop.png"
@@ -193,6 +197,269 @@ async def run_axe_core(page: Page) -> Dict[str, Any]:
     except Exception as e:
         print(f"axe-core failed: {e}")
         return {}
+
+
+async def detect_and_test_chat(page: Page, scan_id: str, url_slug: str) -> ChatInteraction:
+    """Detect chat widgets and test their functionality."""
+    screenshots_path = SCREENSHOTS_DIR / scan_id
+    result = ChatInteraction()
+
+    # Common chat widget selectors
+    CHAT_SELECTORS = [
+        # Floating chat buttons/widgets
+        '[class*="chat" i][class*="button" i]',
+        '[class*="chat" i][class*="widget" i]',
+        '[class*="chat" i][class*="launcher" i]',
+        '[class*="chat" i][class*="toggle" i]',
+        '[class*="chat" i][class*="trigger" i]',
+        '[id*="chat" i][id*="button" i]',
+        '[id*="chat" i][id*="widget" i]',
+        '[aria-label*="chat" i]',
+        '[title*="chat" i]',
+        # Common chat platforms
+        '[class*="intercom" i]',
+        '[class*="drift" i]',
+        '[class*="crisp" i]',
+        '[class*="zendesk" i]',
+        '[class*="tawk" i]',
+        '[class*="livechat" i]',
+        '[class*="hubspot" i]',
+        '[class*="freshchat" i]',
+        # AI/Assistant patterns
+        '[class*="assistant" i]',
+        '[class*="ai-chat" i]',
+        '[class*="chatbot" i]',
+        '[class*="bot" i][class*="chat" i]',
+        # Generic patterns
+        'button[class*="chat" i]',
+        'div[class*="chat" i][role="button"]',
+        '[data-testid*="chat" i]',
+        # iframe-based chats
+        'iframe[src*="chat"]',
+        'iframe[title*="chat" i]',
+    ]
+
+    # Chat input selectors
+    CHAT_INPUT_SELECTORS = [
+        '[class*="chat" i] textarea',
+        '[class*="chat" i] input[type="text"]',
+        '[class*="message" i] textarea',
+        '[class*="message" i] input[type="text"]',
+        '[placeholder*="message" i]',
+        '[placeholder*="type" i][placeholder*="here" i]',
+        '[aria-label*="message" i]',
+        '[data-testid*="chat-input" i]',
+        '[data-testid*="message-input" i]',
+    ]
+
+    # Chat send button selectors
+    CHAT_SEND_SELECTORS = [
+        '[class*="chat" i] button[type="submit"]',
+        '[class*="send" i]',
+        '[aria-label*="send" i]',
+        'button[class*="chat" i]',
+        '[data-testid*="send" i]',
+    ]
+
+    # Chat response/message selectors
+    CHAT_RESPONSE_SELECTORS = [
+        '[class*="chat" i] [class*="message" i]',
+        '[class*="chat" i] [class*="response" i]',
+        '[class*="chat" i] [class*="assistant" i]',
+        '[class*="chat" i] [class*="bot" i]',
+        '[class*="chat" i] [class*="ai" i]',
+        '[class*="bubble" i]',
+    ]
+
+    try:
+        # Capture console errors during chat test
+        chat_console_errors = []
+
+        def capture_chat_error(msg):
+            if msg.type in ("error", "warning"):
+                chat_console_errors.append(msg.text)
+
+        page.on("console", capture_chat_error)
+
+        # Step 1: Detect chat widget
+        chat_element = None
+        chat_selector = None
+
+        for selector in CHAT_SELECTORS:
+            try:
+                element = await page.query_selector(selector)
+                if element:
+                    is_visible = await element.is_visible()
+                    if is_visible:
+                        chat_element = element
+                        chat_selector = selector
+                        result.detected = True
+                        result.selector = selector
+                        print(f"  🗨️ Chat widget detected: {selector}")
+                        break
+            except Exception:
+                continue
+
+        if not chat_element:
+            # Check for chat iframes
+            iframes = await page.query_selector_all('iframe')
+            for iframe in iframes:
+                try:
+                    src = await iframe.get_attribute('src') or ''
+                    title = await iframe.get_attribute('title') or ''
+                    if 'chat' in src.lower() or 'chat' in title.lower():
+                        result.detected = True
+                        result.widget_type = "iframe"
+                        result.selector = f"iframe[src*='{src[:30]}']" if src else f"iframe[title='{title}']"
+                        print(f"  🗨️ Chat iframe detected: {result.selector}")
+                        break
+                except Exception:
+                    continue
+
+        if not result.detected:
+            print(f"  ℹ️ No chat widget detected on page")
+            return result
+
+        # Determine widget type
+        if chat_element:
+            tag_name = await chat_element.evaluate("el => el.tagName.toLowerCase()")
+            classes = await chat_element.get_attribute("class") or ""
+
+            if "float" in classes.lower() or "fixed" in classes.lower():
+                result.widget_type = "floating"
+            elif "modal" in classes.lower() or "popup" in classes.lower():
+                result.widget_type = "modal"
+            else:
+                result.widget_type = "embedded"
+
+        # Step 2: Try to open chat
+        if chat_element and result.widget_type != "iframe":
+            try:
+                await chat_element.click()
+                await page.wait_for_timeout(1500)  # Wait for animation/loading
+                result.could_open = True
+                print(f"  ✓ Chat widget opened")
+
+                # Screenshot the opened chat
+                chat_screenshot_path = screenshots_path / f"{url_slug}_chat_open.png"
+                await page.screenshot(path=str(chat_screenshot_path))
+                result.screenshot_open = str(chat_screenshot_path)
+
+            except Exception as e:
+                result.error = f"Could not open chat: {str(e)}"
+                print(f"  ⚠️ Could not open chat: {e}")
+
+        # Step 3: Try to send a test message
+        if result.could_open or result.widget_type == "embedded":
+            chat_input = None
+
+            for selector in CHAT_INPUT_SELECTORS:
+                try:
+                    element = await page.query_selector(selector)
+                    if element and await element.is_visible():
+                        chat_input = element
+                        print(f"  ✓ Found chat input: {selector}")
+                        break
+                except Exception:
+                    continue
+
+            if chat_input:
+                try:
+                    # Count existing messages before sending
+                    initial_messages = 0
+                    for resp_selector in CHAT_RESPONSE_SELECTORS:
+                        try:
+                            messages = await page.query_selector_all(resp_selector)
+                            initial_messages = max(initial_messages, len(messages))
+                        except Exception:
+                            continue
+
+                    # Type test message
+                    test_message = "Hello, this is a test message."
+                    await chat_input.fill(test_message)
+                    await page.wait_for_timeout(300)
+
+                    # Find and click send button
+                    send_button = None
+                    for selector in CHAT_SEND_SELECTORS:
+                        try:
+                            element = await page.query_selector(selector)
+                            if element and await element.is_visible():
+                                send_button = element
+                                break
+                        except Exception:
+                            continue
+
+                    if send_button:
+                        start_time = datetime.now()
+                        await send_button.click()
+                        result.could_send_message = True
+                        print(f"  ✓ Test message sent")
+
+                        # Wait for response (up to 10 seconds)
+                        for _ in range(20):  # 20 * 500ms = 10 seconds
+                            await page.wait_for_timeout(500)
+
+                            # Check for new messages
+                            for resp_selector in CHAT_RESPONSE_SELECTORS:
+                                try:
+                                    messages = await page.query_selector_all(resp_selector)
+                                    if len(messages) > initial_messages:
+                                        result.got_response = True
+                                        result.response_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+                                        print(f"  ✓ Got response in {result.response_time_ms}ms")
+                                        break
+                                except Exception:
+                                    continue
+
+                            if result.got_response:
+                                break
+
+                        if not result.got_response:
+                            print(f"  ⚠️ No response received within 10 seconds")
+                            result.error = "Chat did not respond within 10 seconds"
+                    else:
+                        # Try pressing Enter instead
+                        await chat_input.press("Enter")
+                        result.could_send_message = True
+                        print(f"  ✓ Test message sent (via Enter key)")
+
+                        # Wait for response
+                        start_time = datetime.now()
+                        for _ in range(20):
+                            await page.wait_for_timeout(500)
+                            for resp_selector in CHAT_RESPONSE_SELECTORS:
+                                try:
+                                    messages = await page.query_selector_all(resp_selector)
+                                    if len(messages) > initial_messages:
+                                        result.got_response = True
+                                        result.response_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+                                        print(f"  ✓ Got response in {result.response_time_ms}ms")
+                                        break
+                                except Exception:
+                                    continue
+                            if result.got_response:
+                                break
+
+                        if not result.got_response:
+                            print(f"  ⚠️ No response received within 10 seconds")
+                            result.error = "Chat did not respond within 10 seconds"
+
+                except Exception as e:
+                    result.error = f"Error during message send: {str(e)}"
+                    print(f"  ⚠️ Error sending message: {e}")
+            else:
+                if result.could_open:
+                    result.error = "Chat opened but could not find input field"
+                    print(f"  ⚠️ Could not find chat input field")
+
+        result.console_errors_during_test = chat_console_errors
+
+    except Exception as e:
+        result.error = f"Chat test failed: {str(e)}"
+        print(f"  ❌ Chat test failed: {e}")
+
+    return result
 
 
 async def discover_links(page: Page, base_url: str) -> List[Dict[str, Any]]:
