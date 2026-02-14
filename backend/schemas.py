@@ -57,7 +57,7 @@ class ScanListResponse(BaseModel):
 
 # Finding schemas (used in pipeline)
 class Evidence(BaseModel):
-    page_url: str
+    page_url: Optional[str] = "/"  # Default to root if not specified
     screenshot_ref: Optional[str] = None
     dom_selector: Optional[str] = None
     console_errors: Optional[List[str]] = None
@@ -68,8 +68,8 @@ class Evidence(BaseModel):
 
 
 class Recommendation(BaseModel):
-    human_readable: str
-    ai_actionable: str
+    human_readable: Optional[str] = ""
+    ai_actionable: Optional[str] = ""
 
 
 class Finding(BaseModel):

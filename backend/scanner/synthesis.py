@@ -86,7 +86,15 @@ async def synthesize_findings(
 
     # Parse deduplicated findings
     deduplicated = []
-    for f in result.get("deduplicated_findings", findings):
+    raw_findings = result.get("deduplicated_findings", [])
+    print(f"   Raw deduplicated_findings count: {len(raw_findings)}, type: {type(raw_findings)}")
+
+    # If synthesis didn't return findings, use original findings
+    if not raw_findings:
+        print(f"   ⚠️  No deduplicated_findings in synthesis, using original {len(findings)} findings")
+        raw_findings = [f.model_dump() for f in findings]
+
+    for i, f in enumerate(raw_findings):
         try:
             if isinstance(f, dict):
                 # Normalize severity to lowercase
@@ -101,11 +109,24 @@ async def synthesize_findings(
                     }
                     f["severity"] = severity_map.get(f["severity"], f["severity"])
                 deduplicated.append(Finding(**f))
-            else:
+            elif hasattr(f, 'model_dump'):
+                # It's already a Finding object
                 deduplicated.append(f)
+            else:
+                print(f"   ⚠️  Finding {i} is unexpected type: {type(f)}")
         except Exception as e:
-            print(f"⚠️  Failed to parse finding in synthesis: {e}")
+            print(f"   ⚠️  Failed to parse finding {i} in synthesis: {e}")
+            if isinstance(f, dict):
+                print(f"      Keys: {f.keys()}")
             continue
+
+    # Debug: Log parsed findings severities
+    parsed_severities = {}
+    for f in deduplicated:
+        sev = f.severity if hasattr(f, 'severity') else 'no-attr'
+        parsed_severities[sev] = parsed_severities.get(sev, 0) + 1
+    print(f"   Parsed findings severities: {parsed_severities}")
+    print(f"   Total deduplicated findings: {len(deduplicated)}")
 
     return SynthesisResult(
         overall_score=result.get("overall_score", 50),
