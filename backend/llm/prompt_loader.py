@@ -5,18 +5,22 @@ from typing import Dict, Any
 PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
 
-def load_prompt(prompt_name: str, version: str = "v1", **kwargs) -> str:
+def load_prompt(prompt_name: str, version: str = None, **kwargs) -> str:
     """
     Load a prompt template and inject dynamic data.
 
     Args:
         prompt_name: Name of the prompt (e.g., "intent_analysis")
-        version: Version suffix (e.g., "v1")
+        version: Version suffix (e.g., "v1"). If None, uses latest version.
         **kwargs: Dynamic data to inject into {{placeholders}}
 
     Returns:
         Formatted prompt string
     """
+    # Auto-detect latest version if not specified
+    if version is None:
+        version = get_prompt_version(prompt_name)
+
     filename = f"{prompt_name}_{version}.md"
     prompt_path = PROMPTS_DIR / filename
 

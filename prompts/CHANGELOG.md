@@ -1,5 +1,33 @@
 # Prompt Changelog
 
+## v2 — Anti-Hallucination Update (2026-02-14)
+
+**Problem:** v1 prompts allowed the LLM too much creative freedom. Agent was generating plausible-sounding but fabricated findings - inventing console errors, guessing file paths, and reporting common framework issues without evidence.
+
+**Example hallucinations from v1:**
+- "Form submission canceled because the form is not connected" (console error never captured)
+- "File hint: src/components/Hero.tsx" (file structure never accessed)
+- "Ratio detected: 3.1:1" (measurement never performed)
+
+**Root cause:** Prompts used aspirational rubrics ("Does the form work?") without enforcing that findings MUST be grounded in actual recon data.
+
+**Changes in v2:**
+
+1. **Added CRITICAL RULE section** - Explicit prohibition of inference/assumption/guessing
+2. **Evidence-only mandates** - "No evidence = no finding" principle enforced
+3. **Negative examples** - Showed what happens when there's no evidence (empty findings array)
+4. **Stricter self-review** - Checklist requires pointing to exact evidence in recon data
+5. **Empty array validation** - Made it clear that `{"findings": []}` is a GOOD outcome
+
+**Updated prompts:**
+- `functionality_lens_v2.md` - Only report observed console errors, network failures, broken images
+- `design_lens_v2.md` - Only report what's visible in screenshots
+- `ux_lens_v2.md` - Only report observable layout/navigation issues from screenshots
+
+**Migration plan:** Update scanner to use v2 prompts. v1 remains for regression testing.
+
+---
+
 ## v1 — Initial Release
 
 All prompts created for GoNoGo V1:
