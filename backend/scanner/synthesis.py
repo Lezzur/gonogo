@@ -68,6 +68,13 @@ async def synthesize_findings(
 
     print(f"🔍 Synthesis LLM returned {len(result.get('deduplicated_findings', []))} deduplicated findings")
 
+    # Debug: Log severity distribution from synthesis
+    synth_severities = {}
+    for f in result.get('deduplicated_findings', []):
+        sev = f.get('severity', 'unknown') if isinstance(f, dict) else 'non-dict'
+        synth_severities[sev] = synth_severities.get(sev, 0) + 1
+    print(f"   Severities from synthesis: {synth_severities}")
+
     # Parse lens scores
     lens_scores = {}
     for lens_name, score_data in result.get("lens_scores", {}).items():
@@ -82,10 +89,22 @@ async def synthesize_findings(
     for f in result.get("deduplicated_findings", findings):
         try:
             if isinstance(f, dict):
+                # Normalize severity to lowercase
+                if "severity" in f:
+                    f["severity"] = f["severity"].lower().strip()
+                    # Map any variations to standard values
+                    severity_map = {
+                        "crit": "critical",
+                        "hi": "high",
+                        "med": "medium",
+                        "lo": "low",
+                    }
+                    f["severity"] = severity_map.get(f["severity"], f["severity"])
                 deduplicated.append(Finding(**f))
             else:
                 deduplicated.append(f)
-        except Exception:
+        except Exception as e:
+            print(f"⚠️  Failed to parse finding in synthesis: {e}")
             continue
 
     return SynthesisResult(
