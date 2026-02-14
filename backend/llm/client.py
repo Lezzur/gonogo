@@ -4,7 +4,7 @@ import base64
 from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
 
-import google.generativeai as genai
+from google import genai
 import anthropic
 
 from config import GEMINI_PRO_MODEL, GEMINI_FLASH_MODEL, CLAUDE_MODEL
@@ -18,7 +18,7 @@ class LLMClient:
         self.api_key = api_key
 
         if provider == "gemini":
-            genai.configure(api_key=api_key)
+            self.gemini_client = genai.Client(api_key=api_key)
         elif provider == "claude":
             self.anthropic = anthropic.Anthropic(api_key=api_key)
 
@@ -63,33 +63,28 @@ class LLMClient:
     ) -> Union[Dict[str, Any], str]:
         """Generate using Gemini API."""
         model_name = GEMINI_PRO_MODEL if model_tier == "pro" else GEMINI_FLASH_MODEL
-        model = genai.GenerativeModel(model_name)
 
         contents = []
 
         # Add images if provided
         if images:
+            from PIL import Image
             for image_path in images:
                 path = Path(image_path)
                 if path.exists():
-                    with open(path, "rb") as f:
-                        image_data = f.read()
-                    mime_type = "image/png" if path.suffix == ".png" else "image/jpeg"
-                    contents.append({
-                        "mime_type": mime_type,
-                        "data": image_data
-                    })
+                    contents.append(Image.open(path))
 
         contents.append(prompt)
 
-        generation_config = {}
+        config = {}
         if expect_json:
-            generation_config["response_mime_type"] = "application/json"
+            config["response_mime_type"] = "application/json"
 
         response = await asyncio.to_thread(
-            model.generate_content,
-            contents,
-            generation_config=generation_config if generation_config else None
+            self.gemini_client.models.generate_content,
+            model=model_name,
+            contents=contents,
+            config=config if config else None
         )
 
         text = response.text
