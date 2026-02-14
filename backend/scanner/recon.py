@@ -1,14 +1,19 @@
 import asyncio
 import json
 import re
+import ssl
+import socket
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from urllib.parse import urljoin, urlparse
 from pathlib import Path
 
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import async_playwright, Page, Browser, Response
 from config import SCREENSHOTS_DIR, MAX_DEEP_PAGES, MAX_SHALLOW_PAGES, MAX_SCAN_DURATION_SECONDS
-from schemas import ReconData, PageData, LinkAudit, ChatInteraction
+from schemas import (
+    ReconData, PageData, LinkAudit, ChatInteraction,
+    SecurityData, SSLInfo, SecurityHeaders, CookieInfo
+)
 
 
 # Page type patterns
@@ -462,6 +467,163 @@ async def detect_and_test_chat(page: Page, scan_id: str, url_slug: str) -> ChatI
     return result
 
 
+def capture_ssl_info(url: str) -> SSLInfo:
+    """Capture SSL/TLS certificate information."""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return SSLInfo(valid=False, error="Site not using HTTPS")
+
+    hostname = parsed.netloc
+    port = 443
+
+    try:
+        context = ssl.create_default_context()
+        with socket.create_connection((hostname, port), timeout=10) as sock:
+            with context.wrap_socket(sock, server_hostname=hostname) as ssock:
+                cert = ssock.getpeercert()
+                protocol = ssock.version()
+
+                # Parse expiry
+                not_after_str = cert.get("notAfter", "")
+                not_after = None
+                days_until_expiry = None
+                if not_after_str:
+                    try:
+                        expiry_date = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z")
+                        not_after = expiry_date.isoformat()
+                        days_until_expiry = (expiry_date - datetime.utcnow()).days
+                    except ValueError:
+                        not_after = not_after_str
+
+                # Extract issuer and subject
+                issuer = dict(x[0] for x in cert.get("issuer", []))
+                subject = dict(x[0] for x in cert.get("subject", []))
+
+                return SSLInfo(
+                    valid=True,
+                    issuer=issuer.get("organizationName", issuer.get("commonName")),
+                    subject=subject.get("commonName"),
+                    not_after=not_after,
+                    days_until_expiry=days_until_expiry,
+                    protocol=protocol
+                )
+    except ssl.SSLCertVerificationError as e:
+        return SSLInfo(valid=False, error=f"Certificate verification failed: {e}")
+    except ssl.SSLError as e:
+        return SSLInfo(valid=False, error=f"SSL error: {e}")
+    except socket.timeout:
+        return SSLInfo(valid=False, error="Connection timeout")
+    except Exception as e:
+        return SSLInfo(valid=False, error=str(e))
+
+
+async def capture_security_data(
+    page: Page,
+    url: str,
+    response_headers: Dict[str, str]
+) -> SecurityData:
+    """Capture security headers, cookies, mixed content, and SRI issues."""
+
+    # Parse security headers
+    headers = SecurityHeaders(
+        content_security_policy=response_headers.get("content-security-policy"),
+        strict_transport_security=response_headers.get("strict-transport-security"),
+        x_frame_options=response_headers.get("x-frame-options"),
+        x_content_type_options=response_headers.get("x-content-type-options"),
+        referrer_policy=response_headers.get("referrer-policy"),
+        permissions_policy=response_headers.get("permissions-policy"),
+        server=response_headers.get("server"),
+        x_powered_by=response_headers.get("x-powered-by")
+    )
+
+    # Capture cookies
+    cookies = []
+    try:
+        browser_cookies = await page.context.cookies()
+        for c in browser_cookies:
+            cookies.append(CookieInfo(
+                name=c.get("name", ""),
+                secure=c.get("secure", False),
+                http_only=c.get("httpOnly", False),
+                same_site=c.get("sameSite")
+            ))
+    except Exception:
+        pass
+
+    # Detect mixed content and missing SRI
+    security_analysis = await page.evaluate("""
+        () => {
+            const results = {
+                mixed_content: [],
+                sri_missing: []
+            };
+
+            const isHttps = location.protocol === 'https:';
+
+            // Check for mixed content (HTTP resources on HTTPS page)
+            if (isHttps) {
+                // Images
+                document.querySelectorAll('img[src^="http://"]').forEach(el => {
+                    results.mixed_content.push({
+                        type: 'image',
+                        url: el.src,
+                        element: el.outerHTML.slice(0, 200)
+                    });
+                });
+
+                // Scripts
+                document.querySelectorAll('script[src^="http://"]').forEach(el => {
+                    results.mixed_content.push({
+                        type: 'script',
+                        url: el.src,
+                        element: el.outerHTML.slice(0, 200)
+                    });
+                });
+
+                // Stylesheets
+                document.querySelectorAll('link[rel="stylesheet"][href^="http://"]').forEach(el => {
+                    results.mixed_content.push({
+                        type: 'stylesheet',
+                        url: el.href,
+                        element: el.outerHTML.slice(0, 200)
+                    });
+                });
+
+                // Iframes
+                document.querySelectorAll('iframe[src^="http://"]').forEach(el => {
+                    results.mixed_content.push({
+                        type: 'iframe',
+                        url: el.src,
+                        element: el.outerHTML.slice(0, 200)
+                    });
+                });
+            }
+
+            // Check external scripts without SRI (integrity attribute)
+            document.querySelectorAll('script[src]').forEach(el => {
+                const src = el.src;
+                // Check if external (different origin)
+                try {
+                    const scriptUrl = new URL(src);
+                    if (scriptUrl.origin !== location.origin && !el.integrity) {
+                        results.sri_missing.push(src);
+                    }
+                } catch (e) {}
+            });
+
+            return results;
+        }
+    """)
+
+    return SecurityData(
+        ssl_info=capture_ssl_info(url),
+        security_headers=headers,
+        cookies=cookies,
+        mixed_content=security_analysis.get("mixed_content", []),
+        subresource_integrity_missing=security_analysis.get("sri_missing", [])
+    )
+
+
 async def discover_links(page: Page, base_url: str) -> List[Dict[str, Any]]:
     """Discover all links on the page."""
     base_domain = urlparse(base_url).netloc
@@ -550,10 +712,17 @@ async def run_reconnaissance(
         page.on("request", handle_request)
         page.on("response", handle_response)
 
+        # Track main page response for security headers
+        main_response_headers: Dict[str, str] = {}
+
         try:
             # Navigate to main URL first
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            main_response = await page.goto(url, wait_until="networkidle", timeout=30000)
             initial_url = page.url
+
+            # Capture response headers for security analysis
+            if main_response:
+                main_response_headers = {k.lower(): v for k, v in main_response.headers.items()}
 
             # Handle authentication if credentials provided
             if auth_credentials and (auth_credentials.get("username") or auth_credentials.get("password")):
@@ -817,6 +986,11 @@ async def run_reconnaissance(
 
             recon_data.pages_deep_tested = deep_tested
             recon_data.pages_shallow_crawled = shallow_crawled
+
+            # Capture security data (SSL, headers, cookies, mixed content)
+            print(f"🔒 Capturing security data...")
+            await page.goto(url, wait_until="networkidle", timeout=30000)
+            recon_data.security_data = await capture_security_data(page, url, main_response_headers)
 
             # Run Lighthouse on homepage
             recon_data.lighthouse_report = await run_lighthouse(url, scan_id)

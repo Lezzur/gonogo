@@ -17,6 +17,7 @@ from scanner.lenses.ux import evaluate_ux
 from scanner.lenses.performance import evaluate_performance
 from scanner.lenses.accessibility import evaluate_accessibility
 from scanner.lenses.code_content import evaluate_code_content
+from scanner.lenses.security import evaluate_security
 from scanner.synthesis import synthesize_findings
 from scanner.report_gen import generate_reports
 
@@ -116,13 +117,14 @@ async def run_scan(
             evaluate_performance(recon_data, intent_analysis, tech_stack, api_key, llm_provider),
             evaluate_accessibility(recon_data, intent_analysis, tech_stack, api_key, llm_provider),
             evaluate_code_content(recon_data, intent_analysis, tech_stack, api_key, llm_provider),
+            evaluate_security(recon_data, intent_analysis, tech_stack, api_key, llm_provider),
         ]
 
         lens_results = await asyncio.gather(*lens_tasks, return_exceptions=True)
 
         # Collect findings from all lenses
         all_findings = []
-        lens_names = ["functionality", "design", "ux", "performance", "accessibility", "code_content"]
+        lens_names = ["functionality", "design", "ux", "performance", "accessibility", "code_content", "security"]
         for i, result in enumerate(lens_results):
             lens_name = lens_names[i] if i < len(lens_names) else f"lens_{i}"
             if isinstance(result, Exception):

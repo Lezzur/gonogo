@@ -106,6 +106,43 @@ class ChatInteraction(BaseModel):
     screenshot_open: Optional[str] = None
 
 
+# Security data schemas
+class SSLInfo(BaseModel):
+    valid: bool = False
+    issuer: Optional[str] = None
+    subject: Optional[str] = None
+    not_after: Optional[str] = None
+    days_until_expiry: Optional[int] = None
+    protocol: Optional[str] = None  # TLSv1.2, TLSv1.3
+    error: Optional[str] = None
+
+
+class SecurityHeaders(BaseModel):
+    content_security_policy: Optional[str] = None
+    strict_transport_security: Optional[str] = None
+    x_frame_options: Optional[str] = None
+    x_content_type_options: Optional[str] = None
+    referrer_policy: Optional[str] = None
+    permissions_policy: Optional[str] = None
+    server: Optional[str] = None  # Info leakage
+    x_powered_by: Optional[str] = None
+
+
+class CookieInfo(BaseModel):
+    name: str
+    secure: bool = False
+    http_only: bool = False
+    same_site: Optional[str] = None
+
+
+class SecurityData(BaseModel):
+    ssl_info: Optional[SSLInfo] = None
+    security_headers: Optional[SecurityHeaders] = None
+    cookies: List[CookieInfo] = []
+    mixed_content: List[Dict[str, Any]] = []
+    subresource_integrity_missing: List[str] = []
+
+
 class PageData(BaseModel):
     url: str
     page_type: str
@@ -140,6 +177,7 @@ class ReconData(BaseModel):
     pages_deep_tested: int = 0
     pages_shallow_crawled: int = 0
     scan_duration_seconds: float = 0.0
+    security_data: Optional[SecurityData] = None
 
 
 # Intent analysis output
