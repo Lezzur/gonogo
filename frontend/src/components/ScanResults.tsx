@@ -8,7 +8,7 @@ function VerdictBadge({ verdict }: { verdict: string }) {
   const styles = {
     'GO': 'bg-green-500 text-white',
     'NO-GO': 'bg-red-500 text-white',
-    'GO_WITH_CONDITIONS': 'bg-yellow-500 text-gray-900'
+    'GO_WITH_CONDITIONS': 'bg-amber-500 text-white'
   }
 
   const labels = {

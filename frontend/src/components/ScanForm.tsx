@@ -71,7 +71,7 @@ export default function ScanForm() {
       </div>
 
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-gray-900 mb-3">Authentication (if required)</h3>
+        <h2 className="text-sm font-medium text-gray-900 mb-3">Authentication (if required)</h2>
         <div className="space-y-3">
           <div>
             <label htmlFor="authUsername" className="block text-sm font-medium text-gray-700 mb-1">
@@ -119,7 +119,17 @@ export default function ScanForm() {
           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
         />
         <p className="mt-1 text-sm text-gray-500">
-          Your key is used only for this scan and never stored.
+          Your key is used only for this scan and never stored.{' '}
+          <span className="text-gray-400">
+            Get one from{' '}
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">
+              Google AI Studio
+            </a>
+            {' '}or{' '}
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">
+              Anthropic Console
+            </a>
+          </span>
         </p>
       </div>
 
@@ -214,7 +224,7 @@ export default function ScanForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full py-4 px-6 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white text-lg font-semibold rounded-lg transition-colors"
+        className="w-full py-4 px-6 bg-green-700 hover:bg-green-800 disabled:bg-green-400 text-white text-lg font-semibold rounded-lg transition-colors"
       >
         {isSubmitting ? 'Starting scan...' : 'Run GoNoGo'}
       </button>

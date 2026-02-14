@@ -43,10 +43,16 @@ export default function Layout({ children }: LayoutProps) {
             <span className="text-xl font-bold text-gray-900">GoNoGo</span>
           </Link>
           <nav className="flex items-center gap-6">
-            <Link to="/" className="text-gray-600 hover:text-gray-900">
+            <Link
+              to="/"
+              className={`hover:text-gray-900 ${location.pathname === '/' ? 'text-gray-900 font-semibold' : 'text-gray-600'}`}
+            >
               New Scan
             </Link>
-            <Link to="/history" className="text-gray-600 hover:text-gray-900">
+            <Link
+              to="/history"
+              className={`hover:text-gray-900 ${location.pathname === '/history' ? 'text-gray-900 font-semibold' : 'text-gray-600'}`}
+            >
               History
             </Link>
           </nav>
