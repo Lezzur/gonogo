@@ -284,39 +284,103 @@ async def run_reconnaissance(
         page.on("response", handle_response)
 
         try:
-            # Navigate to main URL
+            # Navigate to main URL first
             await page.goto(url, wait_until="networkidle", timeout=30000)
+            initial_url = page.url
 
             # Handle authentication if credentials provided
             if auth_credentials and (auth_credentials.get("username") or auth_credentials.get("password")):
                 try:
                     print(f"🔐 Attempting login with provided credentials...")
 
-                    # Try to find email/username input
-                    username_input = await page.query_selector('input[type="email"], input[type="text"][name*="email" i], input[name*="username" i], input[placeholder*="email" i]')
+                    # Check if we're already on a login page
+                    current_url = page.url.lower()
+                    on_login_page = any(path in current_url for path in ['/login', '/signin', '/sign-in', '/auth'])
+
+                    # If not on login page, try common login URLs
+                    if not on_login_page:
+                        base_url = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+                        login_paths = ['/login', '/signin', '/sign-in', '/auth/login']
+
+                        for path in login_paths:
+                            try:
+                                login_url = f"{base_url}{path}"
+                                print(f"  Trying login page: {login_url}")
+                                response = await page.goto(login_url, wait_until="networkidle", timeout=10000)
+                                if response and response.status < 400:
+                                    print(f"  ✓ Found login page at {path}")
+                                    break
+                            except Exception:
+                                continue
+                        else:
+                            print(f"  ⚠️  Could not find login page, trying to authenticate on current page...")
+
+                    # Wait a bit for form to render
+                    await page.wait_for_timeout(1000)
+
+                    # Try to find email/username input with better selectors
+                    username_input = await page.query_selector(
+                        'input[type="email"], input[type="text"], input[name*="email" i], '
+                        'input[name*="username" i], input[id*="email" i], input[id*="username" i], '
+                        'input[placeholder*="email" i], input[placeholder*="username" i]'
+                    )
                     if username_input:
                         await username_input.fill(auth_credentials.get("username", ""))
-                        print(f"✓ Filled username field")
+                        print(f"  ✓ Filled username/email field")
+                    else:
+                        print(f"  ⚠️  Could not find username/email input field")
 
                     # Try to find password input
                     password_input = await page.query_selector('input[type="password"]')
                     if password_input:
                         await password_input.fill(auth_credentials.get("password", ""))
-                        print(f"✓ Filled password field")
-
-                    # Try to find and click submit button
-                    submit_button = await page.query_selector('button[type="submit"], button:has-text("Log in"), button:has-text("Sign in"), input[type="submit"]')
-                    if submit_button:
-                        await submit_button.click()
-                        print(f"✓ Clicked submit button")
-                        # Wait for navigation after login
-                        await page.wait_for_load_state("networkidle", timeout=10000)
-                        print(f"✅ Login completed, proceeding with scan...")
+                        print(f"  ✓ Filled password field")
                     else:
-                        print(f"⚠️  Could not find submit button, proceeding anyway...")
+                        print(f"  ⚠️  Could not find password input field")
+
+                    # Try to find and click submit button (case-insensitive, multiple patterns)
+                    submit_button = await page.query_selector(
+                        'button[type="submit"], input[type="submit"], '
+                        'button:has-text("Log in"), button:has-text("log in"), button:has-text("LOGIN"), '
+                        'button:has-text("Sign in"), button:has-text("sign in"), button:has-text("SIGN IN"), '
+                        'button:has-text("Submit"), button:has-text("submit"), '
+                        'button[class*="submit" i], button[class*="login" i]'
+                    )
+
+                    if submit_button:
+                        # Store current URL to detect redirect
+                        pre_submit_url = page.url
+                        await submit_button.click()
+                        print(f"  ✓ Clicked submit button")
+
+                        # Wait for navigation or network idle
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=15000)
+                        except Exception:
+                            await page.wait_for_timeout(3000)
+
+                        # Verify login success
+                        post_submit_url = page.url
+                        if post_submit_url != pre_submit_url:
+                            print(f"  ✅ Login successful - redirected from {pre_submit_url} to {post_submit_url}")
+                        else:
+                            # Check for error messages
+                            error_element = await page.query_selector('[class*="error" i], [class*="alert" i], [role="alert"]')
+                            if error_element:
+                                error_text = await error_element.inner_text()
+                                print(f"  ❌ Login failed - error message: {error_text[:100]}")
+                            else:
+                                # Check if we're still on login page
+                                if any(path in page.url.lower() for path in ['/login', '/signin', '/sign-in', '/auth']):
+                                    print(f"  ⚠️  Still on login page after submit - login may have failed")
+                                else:
+                                    print(f"  ✅ Login appears successful (no redirect but no error)")
+                    else:
+                        print(f"  ⚠️  Could not find submit button")
 
                 except Exception as e:
-                    print(f"⚠️  Login attempt failed: {e} - continuing scan anyway...")
+                    print(f"  ❌ Login attempt failed with exception: {e}")
+                    print(f"  Continuing scan anyway...")
 
             # Extract meta tags
             recon_data.meta_tags = await page.evaluate("""
