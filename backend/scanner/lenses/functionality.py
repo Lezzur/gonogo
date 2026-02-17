@@ -108,6 +108,88 @@ def generate_chat_findings(recon_data: ReconData) -> List[Finding]:
     return findings
 
 
+def generate_form_test_findings(recon_data: ReconData) -> List[Finding]:
+    """Generate findings from form input testing."""
+    findings = []
+
+    for page in recon_data.pages:
+        for form_test in page.form_test_results:
+            # Check for inputs that showed errors with valid data
+            for test_result in form_test.test_results:
+                # Valid input rejected
+                if test_result.test_type.startswith("valid") and test_result.visual_feedback == "error":
+                    findings.append(Finding(
+                        id=f"FORM-001-{test_result.selector[-15:]}",
+                        lens="functionality",
+                        severity="high",
+                        effort="moderate",
+                        confidence=0.9,
+                        title=f"Form validation rejects valid {test_result.input_type} input",
+                        description=f"The input field '{test_result.label or test_result.selector}' on {page.url} shows an error state when valid test data ('{test_result.test_value}') is entered. This may prevent users from submitting the form.",
+                        evidence=Evidence(
+                            page_url=page.url,
+                            dom_selector=test_result.selector,
+                            screenshot_ref=form_test.screenshot_filled,
+                            raw_data={
+                                "test_value": test_result.test_value,
+                                "test_type": test_result.test_type,
+                                "validation_message": test_result.validation_message,
+                                "visual_feedback": test_result.visual_feedback
+                            }
+                        ),
+                        recommendation=Recommendation(
+                            human_readable=f"Review the validation logic for this {test_result.input_type} field. The current validation may be too strict.",
+                            ai_actionable=f"Check the validation regex/logic for input '{test_result.selector}'. Test value '{test_result.test_value}' should be accepted."
+                        )
+                    ))
+
+                # Console errors during input
+                if test_result.console_errors:
+                    findings.append(Finding(
+                        id=f"FORM-002-{test_result.selector[-15:]}",
+                        lens="functionality",
+                        severity="medium",
+                        effort="moderate",
+                        confidence=0.85,
+                        title=f"JavaScript errors when typing in {test_result.input_type} field",
+                        description=f"Console errors occurred while typing into '{test_result.label or test_result.selector}' on {page.url}: {test_result.console_errors[0][:100]}",
+                        evidence=Evidence(
+                            page_url=page.url,
+                            dom_selector=test_result.selector,
+                            console_errors=test_result.console_errors[:3],
+                            raw_data={"input_type": test_result.input_type}
+                        ),
+                        recommendation=Recommendation(
+                            human_readable="Fix JavaScript errors that occur during form input.",
+                            ai_actionable=f"Debug errors in input handler for '{test_result.selector}': {test_result.console_errors[0][:200]}"
+                        )
+                    ))
+
+            # Check for overall form console errors
+            if form_test.console_errors_during_test and len(form_test.console_errors_during_test) > 2:
+                findings.append(Finding(
+                    id=f"FORM-003-{form_test.form_selector[-15:]}",
+                    lens="functionality",
+                    severity="medium",
+                    effort="moderate",
+                    confidence=0.8,
+                    title="Multiple JavaScript errors during form interaction",
+                    description=f"Multiple console errors ({len(form_test.console_errors_during_test)}) occurred while testing the form at '{form_test.form_selector}' on {page.url}.",
+                    evidence=Evidence(
+                        page_url=page.url,
+                        dom_selector=form_test.form_selector,
+                        console_errors=form_test.console_errors_during_test[:5],
+                        screenshot_ref=form_test.screenshot_filled
+                    ),
+                    recommendation=Recommendation(
+                        human_readable="Multiple JavaScript errors indicate potential issues with form handling.",
+                        ai_actionable=f"Review form event handlers and validation logic for {form_test.form_selector}"
+                    )
+                ))
+
+    return findings
+
+
 async def evaluate_functionality(
     recon_data: ReconData,
     intent: IntentAnalysis,
@@ -122,6 +204,10 @@ async def evaluate_functionality(
     # Generate chat interaction findings first (no LLM needed)
     chat_findings = generate_chat_findings(recon_data)
     print(f"🗨️ Chat interaction check: {len(chat_findings)} findings")
+
+    # Generate form test findings (no LLM needed)
+    form_findings = generate_form_test_findings(recon_data)
+    print(f"📝 Form input test check: {len(form_findings)} findings")
 
     # Gather evidence
     console_errors = []
@@ -144,6 +230,28 @@ async def evaluate_functionality(
             forms.append({
                 "page": page.url,
                 "form": form
+            })
+
+    # Gather form test results
+    form_test_data = []
+    for page in recon_data.pages:
+        for form_test in page.form_test_results:
+            form_test_data.append({
+                "page": page.url,
+                "form_selector": form_test.form_selector,
+                "inputs_tested": form_test.inputs_tested,
+                "inputs_with_validation": form_test.inputs_with_validation,
+                "inputs_with_errors": form_test.inputs_with_errors,
+                "test_results": [
+                    {
+                        "selector": r.selector,
+                        "input_type": r.input_type,
+                        "test_type": r.test_type,
+                        "validation_message": r.validation_message,
+                        "visual_feedback": r.visual_feedback
+                    }
+                    for r in form_test.test_results
+                ]
             })
 
     interactive_elements = []
@@ -170,6 +278,7 @@ async def evaluate_functionality(
         console_errors=console_errors[:50],
         broken_links=broken_links[:50],
         forms=forms[:20],
+        form_test_results=form_test_data[:10],
         interactive_elements=interactive_elements[:50],
         broken_images=broken_images[:20]
     )
@@ -186,7 +295,7 @@ async def evaluate_functionality(
             print(f"⚠️  Failed to parse finding: {e}")
             continue
 
-    # Combine LLM findings with chat interaction findings
-    all_findings = chat_findings + findings
-    print(f"✅ Functionality lens: {len(chat_findings)} chat + {len(findings)} LLM = {len(all_findings)} total findings")
+    # Combine all findings
+    all_findings = chat_findings + form_findings + findings
+    print(f"✅ Functionality lens: {len(chat_findings)} chat + {len(form_findings)} form + {len(findings)} LLM = {len(all_findings)} total findings")
     return all_findings

@@ -106,6 +106,31 @@ class ChatInteraction(BaseModel):
     screenshot_open: Optional[str] = None
 
 
+class InputTestResult(BaseModel):
+    selector: str
+    input_type: str  # text, email, password, textarea, etc.
+    label: Optional[str] = None
+    placeholder: Optional[str] = None
+    test_value: str
+    test_type: str  # valid, invalid_email, empty_required, special_chars, long_text
+    accepted_input: bool = True
+    validation_message: Optional[str] = None
+    visual_feedback: Optional[str] = None  # error, success, warning, none
+    console_errors: List[str] = []
+    screenshot_after: Optional[str] = None
+
+
+class FormTestResults(BaseModel):
+    form_selector: str
+    page_url: str
+    inputs_tested: int = 0
+    inputs_with_validation: int = 0
+    inputs_with_errors: int = 0
+    test_results: List[InputTestResult] = []
+    screenshot_filled: Optional[str] = None
+    console_errors_during_test: List[str] = []
+
+
 # Security data schemas
 class SSLInfo(BaseModel):
     valid: bool = False
@@ -159,6 +184,7 @@ class PageData(BaseModel):
     images: List[Dict[str, Any]] = []
     computed_styles: Dict[str, Any] = {}
     chat_interaction: Optional[ChatInteraction] = None
+    form_test_results: List[FormTestResults] = []
 
 
 class ReconData(BaseModel):

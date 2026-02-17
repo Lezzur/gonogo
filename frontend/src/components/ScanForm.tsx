@@ -75,7 +75,7 @@ export default function ScanForm() {
             onChange={(e) => setShowAuth(e.target.checked)}
             className="w-4 h-4 text-green-600 rounded focus:ring-green-500"
           />
-          <span className="text-sm font-medium text-gray-900">Requires authentication</span>
+          <span className="text-sm font-medium text-gray-900">Requires user log in or authentication</span>
         </label>
         {showAuth && (
           <div className="space-y-3 mt-3 pt-3 border-t border-gray-200">

@@ -35,19 +35,34 @@ async def evaluate_ux(
                 "inputs": form.get("inputs", [])
             })
 
-    # Collect screenshots in navigation order
+    # Collect screenshots in navigation order with descriptions
     screenshots = []
+    screenshot_descriptions = []
     for page in recon_data.pages[:6]:
         if page.screenshot_desktop:
             screenshots.append(page.screenshot_desktop)
+            screenshot_descriptions.append({
+                "file": page.screenshot_desktop,
+                "url": page.url,
+                "type": "desktop",
+                "page_type": page.page_type
+            })
         if page.screenshot_mobile:
             screenshots.append(page.screenshot_mobile)
+            screenshot_descriptions.append({
+                "file": page.screenshot_mobile,
+                "url": page.url,
+                "type": "mobile",
+                "page_type": page.page_type
+            })
 
     prompt = load_prompt(
         "ux_lens",
         intent_analysis=intent.model_dump(),
         tech_stack=tech_stack.model_dump(),
         page_sequence=page_sequence,
+        page_structure=page_sequence,
+        screenshot_descriptions=screenshot_descriptions,
         form_details=form_details[:10],
         key_user_journeys=intent.key_user_journeys
     )

@@ -61,6 +61,11 @@ Images with loading failures:
 {{broken_images}}
 ```
 
+Form input test results (from automated typing tests):
+```json
+{{form_test_results}}
+```
+
 ## Evaluation Rules
 
 **ONLY create findings if:**
@@ -75,6 +80,11 @@ Images with loading failures:
 2. **Network requests show 404/500 status** → Report the broken URL and source page
 3. **Images have loaded: false** → Report missing/broken images
 4. **Forms have no submit action** → Report non-functional forms (only if form.action is empty/missing)
+
+5. **Form test results show issues:**
+   - inputs_with_errors > 0 AND validation_message shows unexpected rejection → Report validation issues
+   - visual_feedback = "error" for valid test inputs → Report overly strict validation
+   - Multiple inputs in same form showing errors → Report form-wide validation problems
 
 **DO NOT create findings about:**
 - Things that "might" be broken without evidence

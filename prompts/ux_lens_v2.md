@@ -64,9 +64,21 @@ Forms found on pages:
 2. **Navigation clarity** - Is nav structure visible and logical based on page_structure?
 3. **CTA clarity** - Are primary actions visible and obvious in screenshots?
 4. **Form UX** - Do visible forms have labels, placeholders (from form_details)?
-5. **Mobile UX** - Do mobile screenshots show proper layout, adequate touch targets?
-6. **Empty/error states** - IF a screenshot shows these, evaluate clarity
-7. **Dead ends** - Can you see navigation options in each screenshot?
+5. **Empty/error states** - IF a screenshot shows these, evaluate clarity
+6. **Dead ends** - Can you see navigation options in each screenshot?
+
+### MOBILE UX CHECKS (REQUIRED - for screenshots marked type: "mobile")
+
+**You MUST compare desktop and mobile versions of the same page:**
+
+7. **Mobile navigation** - Is hamburger menu visible? Can user access all nav items?
+8. **Touch targets** - Are buttons/links large enough to tap (visually ~44px minimum)?
+9. **Content hierarchy on mobile** - Is important content visible without scrolling?
+10. **Form usability on mobile** - Are form fields full-width? Keyboard-friendly input types?
+11. **Mobile CTA placement** - Is primary action reachable with thumb (bottom half of screen)?
+12. **Content truncation** - Is text cut off or awkwardly wrapped on mobile?
+
+**Flag any feature that works on desktop but is broken/hidden on mobile.**
 
 **DO NOT create findings about:**
 - Interactions you can't observe (clicking, hovering, typing)

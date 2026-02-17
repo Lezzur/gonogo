@@ -189,7 +189,9 @@ async def run_scan(
         # Complete
         scan.status = "completed"
         scan.completed_at = datetime.now(timezone.utc)
-        scan.duration_seconds = (scan.completed_at - scan.started_at).total_seconds()
+        # Handle timezone-naive datetimes from SQLite
+        started = scan.started_at.replace(tzinfo=timezone.utc) if scan.started_at.tzinfo is None else scan.started_at
+        scan.duration_seconds = (scan.completed_at - started).total_seconds()
         scan.current_step = None
         scan.progress_message = "Scan complete"
         db.commit()
@@ -206,7 +208,8 @@ async def run_scan(
             scan.error_message = str(e)
             scan.completed_at = datetime.now(timezone.utc)
             if scan.started_at:
-                scan.duration_seconds = (scan.completed_at - scan.started_at).total_seconds()
+                started = scan.started_at.replace(tzinfo=timezone.utc) if scan.started_at.tzinfo is None else scan.started_at
+                scan.duration_seconds = (scan.completed_at - started).total_seconds()
             db.commit()
 
         await progress_manager.send_error(scan_id, str(e))

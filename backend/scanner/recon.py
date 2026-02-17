@@ -12,7 +12,8 @@ from playwright.async_api import async_playwright, Page, Browser, Response
 from config import SCREENSHOTS_DIR, MAX_DEEP_PAGES, MAX_SHALLOW_PAGES, MAX_SCAN_DURATION_SECONDS
 from schemas import (
     ReconData, PageData, LinkAudit, ChatInteraction,
-    SecurityData, SSLInfo, SecurityHeaders, CookieInfo
+    SecurityData, SSLInfo, SecurityHeaders, CookieInfo,
+    FormTestResults, InputTestResult
 )
 
 
@@ -75,6 +76,7 @@ async def capture_page_data(
         # Mobile screenshot
         mobile_path = screenshots_path / f"{url_slug}_mobile.png"
         await page.set_viewport_size({"width": 375, "height": 667})
+        await page.wait_for_timeout(500)  # Allow responsive layout to settle
         await page.screenshot(path=str(mobile_path), full_page=True)
         page_data.screenshot_mobile = str(mobile_path)
 
@@ -146,6 +148,11 @@ async def capture_page_data(
         # Test chat widgets
         print(f"  🔍 Testing chat functionality on {url}...")
         page_data.chat_interaction = await detect_and_test_chat(page, scan_id, url_slug)
+
+        # Test form inputs
+        if page_data.form_elements:
+            print(f"  📝 Testing form inputs on {url}...")
+            page_data.form_test_results = await test_form_inputs(page, scan_id, url_slug, url)
 
     elif test_depth == "spot_check":
         # Just desktop screenshot
@@ -465,6 +472,266 @@ async def detect_and_test_chat(page: Page, scan_id: str, url_slug: str) -> ChatI
         print(f"  ❌ Chat test failed: {e}")
 
     return result
+
+
+async def test_form_inputs(
+    page: Page,
+    scan_id: str,
+    url_slug: str,
+    page_url: str
+) -> List[FormTestResults]:
+    """Test text inputs and textareas on the page."""
+    screenshots_path = SCREENSHOTS_DIR / scan_id
+    results: List[FormTestResults] = []
+
+    # Test data patterns
+    TEST_PATTERNS = {
+        "valid_email": "test@example.com",
+        "invalid_email": "not-an-email",
+        "valid_text": "Test input value",
+        "special_chars": "<script>alert('xss')</script>",
+        "long_text": "A" * 500,
+        "empty": "",
+        "numeric": "12345",
+        "phone": "+1 (555) 123-4567",
+    }
+
+    try:
+        # Capture console errors during form test
+        form_console_errors = []
+
+        def capture_form_error(msg):
+            if msg.type in ("error", "warning"):
+                form_console_errors.append(msg.text)
+
+        page.on("console", capture_form_error)
+
+        # Find all forms on the page
+        forms = await page.query_selector_all("form")
+
+        # Also find standalone inputs not in forms
+        standalone_inputs = await page.evaluate("""
+            () => {
+                const formInputs = new Set();
+                document.querySelectorAll('form input, form textarea').forEach(el => {
+                    formInputs.add(el);
+                });
+
+                const standalone = [];
+                document.querySelectorAll('input[type="text"], input[type="email"], input[type="search"], input[type="tel"], input[type="url"], textarea').forEach(el => {
+                    if (!formInputs.has(el) && el.offsetParent !== null) {
+                        standalone.push({
+                            selector: el.id ? '#' + el.id : (el.name ? `[name="${el.name}"]` : null),
+                            type: el.type || 'textarea',
+                            placeholder: el.placeholder || ''
+                        });
+                    }
+                });
+                return standalone.filter(s => s.selector);
+            }
+        """)
+
+        form_index = 0
+        for form in forms:
+            form_index += 1
+            form_id = await form.get_attribute("id")
+            form_selector = f"#{form_id}" if form_id else f"form:nth-of-type({form_index})"
+
+            form_result = FormTestResults(
+                form_selector=form_selector,
+                page_url=page_url
+            )
+
+            # Find testable inputs within this form
+            inputs = await form.query_selector_all(
+                'input[type="text"], input[type="email"], input[type="search"], '
+                'input[type="tel"], input[type="url"], input[type="password"], textarea'
+            )
+
+            for input_el in inputs:
+                try:
+                    # Check if visible
+                    is_visible = await input_el.is_visible()
+                    if not is_visible:
+                        continue
+
+                    # Get input metadata
+                    input_type = await input_el.get_attribute("type") or "text"
+                    input_id = await input_el.get_attribute("id")
+                    input_name = await input_el.get_attribute("name")
+                    placeholder = await input_el.get_attribute("placeholder") or ""
+                    is_required = await input_el.get_attribute("required") is not None
+
+                    tag_name = await input_el.evaluate("el => el.tagName.toLowerCase()")
+                    if tag_name == "textarea":
+                        input_type = "textarea"
+
+                    selector = f"#{input_id}" if input_id else f"[name='{input_name}']" if input_name else None
+                    if not selector:
+                        continue
+
+                    # Get label
+                    label = await page.evaluate("""
+                        (selector) => {
+                            const el = document.querySelector(selector);
+                            if (!el) return null;
+                            if (el.labels && el.labels[0]) return el.labels[0].textContent.trim();
+                            const ariaLabel = el.getAttribute('aria-label');
+                            if (ariaLabel) return ariaLabel;
+                            return null;
+                        }
+                    """, selector)
+
+                    # Choose test value based on input type
+                    if input_type == "email":
+                        test_value = TEST_PATTERNS["valid_email"]
+                        test_type = "valid_email"
+                    elif input_type == "tel":
+                        test_value = TEST_PATTERNS["phone"]
+                        test_type = "phone"
+                    elif input_type == "textarea":
+                        test_value = TEST_PATTERNS["long_text"][:200]
+                        test_type = "long_text"
+                    elif input_type == "password":
+                        test_value = "TestPassword123!"
+                        test_type = "valid_password"
+                    else:
+                        test_value = TEST_PATTERNS["valid_text"]
+                        test_type = "valid_text"
+
+                    # Clear and type into input
+                    form_console_errors.clear()
+                    await input_el.click()
+                    await input_el.fill("")
+                    await input_el.type(test_value, delay=20)
+                    await page.wait_for_timeout(300)
+
+                    # Trigger blur to activate validation
+                    await input_el.evaluate("el => el.blur()")
+                    await page.wait_for_timeout(500)
+
+                    # Check for validation message
+                    validation_message = await input_el.evaluate("""
+                        el => el.validationMessage || null
+                    """)
+
+                    # Check for visual feedback (error/success classes)
+                    visual_feedback = await page.evaluate("""
+                        (selector) => {
+                            const el = document.querySelector(selector);
+                            if (!el) return 'none';
+                            const classes = el.className.toLowerCase();
+                            const parentClasses = el.parentElement?.className?.toLowerCase() || '';
+                            const allClasses = classes + ' ' + parentClasses;
+
+                            if (allClasses.includes('error') || allClasses.includes('invalid')) return 'error';
+                            if (allClasses.includes('success') || allClasses.includes('valid')) return 'success';
+                            if (allClasses.includes('warning')) return 'warning';
+
+                            // Check for aria-invalid
+                            if (el.getAttribute('aria-invalid') === 'true') return 'error';
+
+                            // Check for sibling error messages
+                            const sibling = el.nextElementSibling;
+                            if (sibling && (sibling.className.toLowerCase().includes('error') ||
+                                           sibling.className.toLowerCase().includes('invalid'))) {
+                                return 'error';
+                            }
+
+                            return 'none';
+                        }
+                    """, selector)
+
+                    test_result = InputTestResult(
+                        selector=selector,
+                        input_type=input_type,
+                        label=label,
+                        placeholder=placeholder,
+                        test_value=test_value[:50] + "..." if len(test_value) > 50 else test_value,
+                        test_type=test_type,
+                        accepted_input=True,
+                        validation_message=validation_message,
+                        visual_feedback=visual_feedback,
+                        console_errors=list(form_console_errors)
+                    )
+
+                    form_result.test_results.append(test_result)
+                    form_result.inputs_tested += 1
+
+                    if validation_message or visual_feedback != "none":
+                        form_result.inputs_with_validation += 1
+                    if visual_feedback == "error":
+                        form_result.inputs_with_errors += 1
+
+                    print(f"    ✓ Tested {input_type} input: {selector}")
+
+                except Exception as e:
+                    print(f"    ⚠️ Failed to test input: {e}")
+                    continue
+
+            # Take screenshot of filled form
+            if form_result.inputs_tested > 0:
+                try:
+                    screenshot_path = screenshots_path / f"{url_slug}_form_{form_index}_filled.png"
+                    await form.screenshot(path=str(screenshot_path))
+                    form_result.screenshot_filled = str(screenshot_path)
+                except Exception:
+                    pass
+
+            form_result.console_errors_during_test = list(form_console_errors)
+
+            if form_result.inputs_tested > 0:
+                results.append(form_result)
+                print(f"  📝 Form {form_index}: tested {form_result.inputs_tested} inputs, {form_result.inputs_with_validation} with validation")
+
+        # Test standalone inputs
+        if standalone_inputs:
+            standalone_result = FormTestResults(
+                form_selector="standalone",
+                page_url=page_url
+            )
+
+            for input_info in standalone_inputs[:5]:  # Limit to 5 standalone inputs
+                try:
+                    selector = input_info["selector"]
+                    input_el = await page.query_selector(selector)
+                    if not input_el or not await input_el.is_visible():
+                        continue
+
+                    input_type = input_info["type"]
+                    test_value = TEST_PATTERNS["valid_text"]
+
+                    await input_el.click()
+                    await input_el.fill("")
+                    await input_el.type(test_value, delay=20)
+                    await page.wait_for_timeout(300)
+                    await input_el.evaluate("el => el.blur()")
+                    await page.wait_for_timeout(300)
+
+                    test_result = InputTestResult(
+                        selector=selector,
+                        input_type=input_type,
+                        placeholder=input_info.get("placeholder"),
+                        test_value=test_value,
+                        test_type="valid_text",
+                        accepted_input=True
+                    )
+
+                    standalone_result.test_results.append(test_result)
+                    standalone_result.inputs_tested += 1
+                    print(f"    ✓ Tested standalone input: {selector}")
+
+                except Exception as e:
+                    print(f"    ⚠️ Failed to test standalone input: {e}")
+                    continue
+
+            if standalone_result.inputs_tested > 0:
+                results.append(standalone_result)
+
+    except Exception as e:
+        print(f"  ❌ Form testing failed: {e}")
+
+    return results
 
 
 def capture_ssl_info(url: str) -> SSLInfo:

@@ -57,6 +57,17 @@ Screenshot list:
 5. **Image quality** - Visible pixelation, stretching, mismatched aspect ratios
 6. **Unfinished/template** - Visible default placeholder content, Lorem ipsum text
 
+### MOBILE-SPECIFIC CHECKS (for screenshots marked type: "mobile")
+
+**Compare desktop vs mobile screenshots for the same page:**
+
+7. **Responsive layout** - Content cut off, horizontal scrolling, elements overlapping
+8. **Touch target size** - Buttons/links too small (< 44px visually)
+9. **Text readability** - Font too small on mobile, text cramped or overflowing
+10. **Navigation collapse** - Does mobile nav (hamburger) hide important items?
+11. **Image scaling** - Images not resizing properly, breaking layout
+12. **Content priority** - Important content pushed below fold on mobile
+
 **DO NOT create findings about:**
 - Hypothetical states not shown in screenshots (hover, focus, error states)
 - Code quality (you're looking at screenshots, not code)
