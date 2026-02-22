@@ -61,6 +61,7 @@ export default function SettingsPage() {
           <input
             type="password"
             id="settings-apiKey"
+            autoComplete="off"
             value={draft.apiKey}
             onChange={e => update('apiKey', e.target.value)}
             placeholder="Your Gemini or Claude API key"
