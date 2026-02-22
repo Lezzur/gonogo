@@ -30,7 +30,7 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
   const [localDevUrl, setLocalDevUrl] = useState(settings.localDevUrl)
 
   const [maxCycles, setMaxCycles] = useState(settings.maxCycles)
-  const [stopCondition, setStopCondition] = useState<'GO' | 'GO_WITH_CONDITIONS' | 'manual'>(settings.stopCondition)
+  const [stopCondition, setStopCondition] = useState<'GO' | 'GO_WITH_CONDITIONS' | 'on_loop_end' | 'manual'>(settings.stopCondition)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -83,7 +83,7 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
         strategy: applyMode,
         branch_name: applyMode === 'branch' ? `gonogo/fix-${scanId.slice(0, 8)}` : undefined,
         max_cycles: maxCycles,
-        stop_on_verdict: stopCondition === 'manual' ? undefined : stopCondition,
+        stop_on_verdict: (stopCondition === 'manual' || stopCondition === 'on_loop_end') ? undefined : stopCondition,
         deploy_command: deployMode === 'preview' ? deployCommand : undefined,
         deploy_strategy: deployMode,
         api_key: apiKey,
@@ -434,15 +434,20 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
             </label>
             <select
               value={stopCondition}
-              onChange={(e) => setStopCondition(e.target.value as 'GO' | 'GO_WITH_CONDITIONS' | 'manual')}
+              onChange={(e) => setStopCondition(e.target.value as 'GO' | 'GO_WITH_CONDITIONS' | 'on_loop_end' | 'manual')}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
             >
               <option value="GO">Stop on GO (Recommended)</option>
               <option value="GO_WITH_CONDITIONS">Stop on GO WITH CONDITIONS</option>
+              <option value="on_loop_end">On Loop End</option>
               <option value="manual">Manual stop only</option>
             </select>
             <p className="mt-1 text-sm text-gray-500">
-              Loop will stop early if this verdict is reached, regardless of remaining cycles.
+              {stopCondition === 'on_loop_end'
+                ? 'Runs all cycles to completion without early stopping.'
+                : stopCondition === 'manual'
+                ? 'Loop runs until you manually stop it.'
+                : 'Loop will stop early if this verdict is reached, regardless of remaining cycles.'}
             </p>
           </div>
 

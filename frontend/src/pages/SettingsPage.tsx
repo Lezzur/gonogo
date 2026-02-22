@@ -28,7 +28,7 @@ export default function SettingsPage() {
       deployMode: 'preview',
       deployCommand: 'vercel deploy --branch {branch}',
       localDevUrl: 'http://localhost:3000',
-      severityFilter: { critical: true, high: true, medium: false, low: false },
+      severityFilter: { critical: true, high: true, medium: true, low: true },
       defaultRepoPath: '',
       defaultUserBrief: '',
       defaultTechStack: '',
@@ -133,6 +133,7 @@ export default function SettingsPage() {
             >
               <option value="GO">Stop on GO</option>
               <option value="GO_WITH_CONDITIONS">Stop on GO WITH CONDITIONS</option>
+              <option value="on_loop_end">On Loop End</option>
               <option value="manual">Manual stop only</option>
             </select>
           </div>

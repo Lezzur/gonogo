@@ -7,7 +7,7 @@ export interface AppSettings {
 
   // Fix Loop Defaults
   maxCycles: number
-  stopCondition: 'GO' | 'GO_WITH_CONDITIONS' | 'manual'
+  stopCondition: 'GO' | 'GO_WITH_CONDITIONS' | 'on_loop_end' | 'manual'
   applyMode: 'branch' | 'direct'
   permissionMode: 'full' | 'cautious'
   deployMode: 'preview' | 'local' | 'manual'
@@ -39,8 +39,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   severityFilter: {
     critical: true,
     high: true,
-    medium: false,
-    low: false,
+    medium: true,
+    low: true,
   },
   defaultRepoPath: '',
   defaultUserBrief: '',
