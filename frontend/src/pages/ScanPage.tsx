@@ -87,7 +87,7 @@ export default function ScanPage() {
         {isInProgress ? (
           <ScanProgress scanId={scan.id} onComplete={handleComplete} />
         ) : scan.status === 'completed' ? (
-          <ScanResults scan={scan} />
+          <ScanResults scan={scan} onLoopComplete={fetchScan} />
         ) : (
           <div className="text-center py-8">
             <div className="text-red-600 font-medium mb-2">Scan Failed</div>

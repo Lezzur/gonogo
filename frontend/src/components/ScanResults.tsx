@@ -1,7 +1,11 @@
+import { useState } from 'react'
 import { ScanResult, getReportUrl } from '../api/client'
+import FixLoopConfig from './FixLoopConfig'
+import FixLoopProgress from './FixLoopProgress'
 
 interface ScanResultsProps {
   scan: ScanResult
+  onLoopComplete?: () => void
 }
 
 function VerdictBadge({ verdict }: { verdict: string }) {
@@ -49,7 +53,34 @@ function LensScoreCard({ name, score, grade, summary }: { name: string; score: n
   )
 }
 
-export default function ScanResults({ scan }: ScanResultsProps) {
+export default function ScanResults({ scan, onLoopComplete }: ScanResultsProps) {
+  const [fixLoopActive, setFixLoopActive] = useState(false)
+  const [loopId, setLoopId] = useState<string | null>(null)
+
+  const hasFindings = scan.findings_count &&
+    (scan.findings_count.critical || 0) +
+    (scan.findings_count.high || 0) +
+    (scan.findings_count.medium || 0) +
+    (scan.findings_count.low || 0) > 0
+
+  const showFixLoopConfig = hasFindings && !fixLoopActive && !loopId
+
+  const handleLoopStarted = (newLoopId: string) => {
+    setLoopId(newLoopId)
+    setFixLoopActive(true)
+  }
+
+  const handleLoopComplete = () => {
+    setFixLoopActive(false)
+    if (onLoopComplete) {
+      onLoopComplete()
+    }
+  }
+
+  if (fixLoopActive && loopId) {
+    return <FixLoopProgress scanId={scan.id} loopId={loopId} onComplete={handleLoopComplete} />
+  }
+
   return (
     <div className="space-y-8">
       <div className="text-center">
@@ -137,6 +168,17 @@ export default function ScanResults({ scan }: ScanResultsProps) {
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {showFixLoopConfig && (
+        <div className="border-t border-gray-200 pt-8">
+          <FixLoopConfig
+            scanId={scan.id}
+            apiKey={localStorage.getItem('apiKey') || ''}
+            llmProvider={localStorage.getItem('llmProvider') || 'gemini'}
+            onLoopStarted={handleLoopStarted}
+          />
         </div>
       )}
 

@@ -40,6 +40,27 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
+function FixLoopCycleBadge({ cycleNumber }: { cycleNumber: number }) {
+  return (
+    <span className="inline-block px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+      Fix Loop Cycle {cycleNumber}
+    </span>
+  )
+}
+
+function ScoreDeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null
+
+  const color = delta > 0 ? 'text-green-600' : 'text-red-600'
+  const sign = delta > 0 ? '+' : ''
+
+  return (
+    <span className={`text-xs font-medium ${color}`}>
+      {sign}{delta}
+    </span>
+  )
+}
+
 function formatDate(dateString: string): string {
   return new Date(dateString).toLocaleDateString('en-US', {
     month: 'short',
@@ -75,38 +96,84 @@ export default function ScanHistory({ scans }: ScanHistoryProps) {
     )
   }
 
+  // Build a map to track parent scans and their cycles
+  const parentScanMap = new Map<string, { parent: ScanResult; cycles: ScanResult[] }>()
+
+  scans.forEach(scan => {
+    if (scan.parent_scan_id) {
+      // This is a rescan (cycle)
+      if (!parentScanMap.has(scan.parent_scan_id)) {
+        // Find the parent scan
+        const parent = scans.find(s => s.id === scan.parent_scan_id)
+        if (parent) {
+          parentScanMap.set(scan.parent_scan_id, { parent, cycles: [] })
+        }
+      }
+      const entry = parentScanMap.get(scan.parent_scan_id)
+      if (entry) {
+        entry.cycles.push(scan)
+      }
+    }
+  })
+
+  // Calculate cycle numbers and score deltas
+  const getCycleNumber = (scan: ScanResult): number => {
+    if (!scan.parent_scan_id) return 0
+    const entry = parentScanMap.get(scan.parent_scan_id)
+    if (!entry) return 0
+    return entry.cycles.indexOf(scan) + 1
+  }
+
+  const getScoreDelta = (scan: ScanResult): number | null => {
+    if (!scan.parent_scan_id || scan.overall_score === undefined) return null
+    const entry = parentScanMap.get(scan.parent_scan_id)
+    if (!entry) return null
+    const parentScore = entry.parent.overall_score
+    if (parentScore === undefined) return null
+    return scan.overall_score - parentScore
+  }
+
   return (
     <>
       {/* Mobile card layout */}
       <div className="md:hidden divide-y divide-gray-100">
-        {scans.map((scan) => (
-          <Link
-            key={scan.id}
-            to={`/scan/${scan.id}`}
-            className="block p-4 hover:bg-gray-50 active:bg-gray-100"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 truncate">
-                  {new URL(scan.url).hostname}
+        {scans.map((scan) => {
+          const cycleNumber = getCycleNumber(scan)
+          const scoreDelta = getScoreDelta(scan)
+
+          return (
+            <Link
+              key={scan.id}
+              to={`/scan/${scan.id}`}
+              className="block p-4 hover:bg-gray-50 active:bg-gray-100"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-gray-900 truncate">
+                    {new URL(scan.url).hostname}
+                  </div>
+                  <div className="text-sm text-gray-500 mt-1">
+                    {formatDate(scan.created_at)}
+                  </div>
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    {cycleNumber > 0 && <FixLoopCycleBadge cycleNumber={cycleNumber} />}
+                    <VerdictBadge verdict={scan.verdict} />
+                    <StatusBadge status={scan.status} />
+                    {scan.overall_score !== undefined && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm font-medium text-gray-700">
+                          {scan.overall_score}/100
+                        </span>
+                        {scoreDelta !== null && <ScoreDeltaBadge delta={scoreDelta} />}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-sm text-gray-500 mt-1">
-                  {formatDate(scan.created_at)}
-                </div>
-                <div className="flex items-center gap-2 mt-2">
-                  <VerdictBadge verdict={scan.verdict} />
-                  <StatusBadge status={scan.status} />
-                  {scan.overall_score !== undefined && (
-                    <span className="text-sm font-medium text-gray-700">
-                      {scan.overall_score}/100
-                    </span>
-                  )}
-                </div>
+                <ChevronRight />
               </div>
-              <ChevronRight />
-            </div>
-          </Link>
-        ))}
+            </Link>
+          )
+        })}
       </div>
 
       {/* Desktop table layout */}
@@ -124,42 +191,55 @@ export default function ScanHistory({ scans }: ScanHistoryProps) {
             </tr>
           </thead>
           <tbody>
-            {scans.map((scan) => (
-              <tr key={scan.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer group">
-                <td className="py-3 px-4">
-                  <Link
-                    to={`/scan/${scan.id}`}
-                    className="text-gray-900 group-hover:text-green-600 font-medium"
-                  >
-                    {new URL(scan.url).hostname}
-                  </Link>
-                </td>
-                <td className="py-3 px-4 text-sm text-gray-600">
-                  {formatDate(scan.created_at)}
-                </td>
-                <td className="py-3 px-4 text-center">
-                  <VerdictBadge verdict={scan.verdict} />
-                </td>
-                <td className="py-3 px-4 text-center">
-                  {scan.overall_score !== undefined ? (
-                    <span className="font-medium">{scan.overall_score}</span>
-                  ) : (
-                    <span className="text-gray-600">-</span>
-                  )}
-                </td>
-                <td className="py-3 px-4 text-center text-sm text-gray-600">
-                  {formatDuration(scan.duration_seconds)}
-                </td>
-                <td className="py-3 px-4 text-center">
-                  <StatusBadge status={scan.status} />
-                </td>
-                <td className="py-3 px-4">
-                  <Link to={`/scan/${scan.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <ChevronRight />
-                  </Link>
-                </td>
-              </tr>
-            ))}
+            {scans.map((scan) => {
+              const cycleNumber = getCycleNumber(scan)
+              const scoreDelta = getScoreDelta(scan)
+
+              return (
+                <tr key={scan.id} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer group">
+                  <td className="py-3 px-4">
+                    <Link
+                      to={`/scan/${scan.id}`}
+                      className="text-gray-900 group-hover:text-green-600 font-medium"
+                    >
+                      {new URL(scan.url).hostname}
+                    </Link>
+                    {cycleNumber > 0 && (
+                      <div className="mt-1">
+                        <FixLoopCycleBadge cycleNumber={cycleNumber} />
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-gray-600">
+                    {formatDate(scan.created_at)}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <VerdictBadge verdict={scan.verdict} />
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    {scan.overall_score !== undefined ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="font-medium">{scan.overall_score}</span>
+                        {scoreDelta !== null && <ScoreDeltaBadge delta={scoreDelta} />}
+                      </div>
+                    ) : (
+                      <span className="text-gray-600">-</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4 text-center text-sm text-gray-600">
+                    {formatDuration(scan.duration_seconds)}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <StatusBadge status={scan.status} />
+                  </td>
+                  <td className="py-3 px-4">
+                    <Link to={`/scan/${scan.id}`} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ChevronRight />
+                    </Link>
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

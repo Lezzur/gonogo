@@ -26,6 +26,7 @@ export interface ScanResult {
   completed_at?: string
   report_a_available: boolean
   report_b_available: boolean
+  parent_scan_id?: string
 }
 
 export interface ProgressEvent {
