@@ -2,7 +2,8 @@ import re
 from pathlib import Path
 from typing import Dict, Any
 
-PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+PROMPTS_DIR = _BACKEND_DIR / "prompts" if (_BACKEND_DIR / "prompts").is_dir() else _BACKEND_DIR.parent / "prompts"
 
 
 def load_prompt(prompt_name: str, version: str = None, **kwargs) -> str:

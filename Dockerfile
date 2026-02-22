@@ -6,8 +6,9 @@ WORKDIR /app
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy backend source (exclude venv — dependencies already installed above)
+# Copy backend source and prompt templates
 COPY backend/ .
+COPY prompts/ ./prompts/
 
 # Create directories for SQLite DB and file storage
 RUN mkdir -p data storage/screenshots storage/reports
