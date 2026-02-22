@@ -40,3 +40,5 @@ logs/
 .coverage
 htmlcov/
 .pytest_cache/
+.barker/
+worktrees/
