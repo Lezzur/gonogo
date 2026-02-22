@@ -49,7 +49,7 @@ app.include_router(fix_loop.router, prefix="/api/scans", tags=["fix-loop"])
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "gonogo"}
+    return {"status": "healthy", "service": "gonogo", "cors_origins": CORS_ORIGINS}
 
 
 if __name__ == "__main__":
