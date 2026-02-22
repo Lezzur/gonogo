@@ -19,22 +19,22 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.database import SessionLocal
-from backend.models import FixCycle, Scan
-from backend.schemas import FixLoopStartRequest
-from backend.services.claude_code import (
+from database import SessionLocal
+from models import FixCycle, Scan
+from schemas import FixLoopStartRequest
+from services.claude_code import (
     ClaudeCodeAuthError,
     ClaudeCodeNotInstalledError,
     ClaudeCodeRunner,
 )
-from backend.services.deploy_manager import DeployManager, DeployResult
-from backend.services.git_manager import (
+from services.deploy_manager import DeployManager, DeployResult
+from services.git_manager import (
     DirtyWorkingTreeError,
     GitManager,
     NotAGitRepoError,
 )
-from backend.services.report_feed import generate_delta_report, prepare_feed
-from backend.utils.progress import progress_manager
+from services.report_feed import generate_delta_report, prepare_feed
+from utils.progress import progress_manager
 
 logger = logging.getLogger(__name__)
 
@@ -598,7 +598,7 @@ class FixLoopOrchestrator:
 
     async def _run_rescan(self, url: str) -> str:
         """Run a rescan and return the new scan ID."""
-        from backend.scanner.orchestrator import run_scan
+        from scanner.orchestrator import run_scan
 
         # Create a new scan record for the rescan
         rescan = Scan(

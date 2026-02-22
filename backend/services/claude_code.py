@@ -9,7 +9,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from backend.config import (
+from fix_loop_config import (
     CLAUDE_CODE_ALLOWED_TOOLS,
     CLAUDE_CODE_MAX_BUDGET_USD,
     CLAUDE_CODE_MAX_TURNS,

@@ -4,7 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from backend.config import FIX_BRANCH_PREFIX
+from fix_loop_config import FIX_BRANCH_PREFIX
 
 logger = logging.getLogger(__name__)
 

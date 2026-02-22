@@ -9,7 +9,7 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel
 
-from backend.config import DEFAULT_DEPLOY_MODE
+from fix_loop_config import DEFAULT_DEPLOY_MODE
 
 logger = logging.getLogger(__name__)
 
