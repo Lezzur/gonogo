@@ -53,9 +53,23 @@ export default function ScanPage() {
   if (error || !scan) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-12">
-        <div className="text-center">
-          <p className="text-red-600">{error || 'Scan not found'}</p>
-          <Link to="/" className="text-green-600 hover:text-green-700 mt-4 inline-block">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-50 flex items-center justify-center">
+            <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Scan not found</h2>
+          <p className="text-sm text-gray-500 mb-6">
+            This scan may have been removed or the link is invalid.
+          </p>
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-700 hover:bg-green-800 text-white font-medium rounded-lg transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
             Start a new scan
           </Link>
         </div>
