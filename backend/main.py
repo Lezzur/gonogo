@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from config import CORS_ORIGINS, BACKEND_PORT
 from database import init_db
-from api import scans, reports
+from api import scans, reports, fix_loop
 
 # Force UTF-8 encoding on Windows to prevent charmap codec errors
 if sys.platform == 'win32':
@@ -44,6 +44,7 @@ app.add_middleware(
 # Include routers
 app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
 app.include_router(reports.router, prefix="/api/scans", tags=["reports"])
+app.include_router(fix_loop.router, prefix="/api/scans", tags=["fix-loop"])
 
 
 @app.get("/health")
