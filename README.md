@@ -100,6 +100,68 @@ npm install -g lighthouse
 6. **Code Quality** - Semantic HTML, SEO, console cleanliness
 7. **Content** - Placeholder text, typos, microcopy
 
+## Automated Fix Loop
+
+GoNoGo can automatically feed Report A to Claude Code in headless mode, apply fixes, rebuild/redeploy, and rescan — iterating until the verdict reaches GO or the cycle limit is reached.
+
+### Prerequisites
+
+Before using the automated fix loop:
+
+1. **Claude Code installed** — The CLI must be available on your system
+2. **Git repository** — Your project must be a git repository
+3. **Deploy pipeline** — Configure how to rebuild/redeploy (or use local dev server)
+
+### How It Works
+
+1. Complete a GoNoGo scan and get your reports
+2. Click "Start Fix Loop" and configure:
+   - Deploy method (branch preview, manual rebuild, or dev server)
+   - Claude Code permissions and token budget
+   - Max fix cycles (default: 3)
+3. GoNoGo creates a git branch (`gonogo/fix-<scan_id>`) for safety
+4. Report A is fed to Claude Code in headless mode
+5. Claude Code applies fixes within configured permissions
+6. Changes are committed to the fix branch
+7. Your app is rebuilt/redeployed (based on your config)
+8. GoNoGo rescans the fixed version
+9. A delta report shows what fixed, what regressed, and what's new
+10. Process repeats until GO verdict or max cycles reached
+
+### Usage Flow
+
+```bash
+# 1. Run initial scan
+Open GoNoGo UI → Enter URL → Run scan → Download reports
+
+# 2. Start fix loop (via UI)
+Review Report A → Configure fix loop settings → Start loop
+
+# 3. Monitor progress
+Watch SSE stream showing:
+  - Claude Code applying fixes
+  - Git commits being created
+  - Deployment progress
+  - Rescan results
+  - Delta report generation
+
+# 4. Review results
+After loop completes:
+  - Review git branch diff: git diff main..gonogo/fix-<scan_id>
+  - Download delta reports for each cycle
+  - Merge fix branch via PR if satisfied
+```
+
+### Git Branch Safety
+
+All fixes are made on a dedicated branch by default:
+- Branch name: `gonogo/fix-<scan_id>`
+- You can review all changes before merging
+- Original code remains untouched on main branch
+- Can discard the fix branch if results aren't satisfactory
+
+**Direct edit option:** You can opt-in to direct edits on your current branch, but this must be explicitly chosen at scan time.
+
 ## Cost Per Scan
 
 Approximately $0.50 using Gemini API (with BYOK model).

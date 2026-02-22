@@ -947,6 +947,12 @@ This QA agent is one tool within **BaryApps** — a collection of small to mediu
 - [x] **Prompt Version Control:** Yes — versioned files in `/prompts/` directory, tracked per scan record. AI assistant drafts all prompts; founder tests and iterates. CHANGELOG.md tracks changes.
 - [x] **Calibration Dataset:** Yes — 5 reference sites. AI assistant creates baseline ground truth. Founder reviews. AI assistant will proactively remind founder to revisit calibration.
 - [x] **Cost Per Scan Estimate:** ~$0.50 average per scan (Gemini API). $0.25–$1.00 range depending on site complexity.
+- [x] **Report Feed to Claude Code:** Full Report A for <200k tokens (typical). Batched by severity for larger reports. User selects which severity tiers to fix.
+- [x] **Fix Safety Model:** Git branch by default (`gonogo/fix-<scan_id>`), direct edits optional. User chooses at scan time.
+- [x] **Rebuild/Redeploy Strategy:** Branch-based preview deploy (default), manual rebuild, or local dev server rescan. Deploy command user-configurable.
+- [x] **Loop Cycle Limits:** Configurable, default 3 cycles. Stops on GO verdict, max cycles, budget exhausted, or user stop.
+- [x] **Severity Escalation Per Cycle:** Not needed — delta report naturally reprioritizes as critical issues resolve. Delta section added for cycle 2+.
+- [x] **Claude Code Integration Approach:** Headless invocation with file input (not stdin). Permissions, budget, allowed tools configured by user before loop starts.
 
 ### Unresolved
 - [ ] **Domain:** gonogo.app? gonogo.dev? gonogo.tools? Need to check availability and decide.
@@ -958,6 +964,27 @@ This QA agent is one tool within **BaryApps** — a collection of small to mediu
 ---
 
 ## 8. Conversation Log & Key Decisions
+
+### Session 2 — February 22, 2026
+
+**Topics Covered:**
+- Automated fix loop integration with Claude Code
+- Report feed strategy for large reports
+- Git branch safety model for automated fixes
+- Deploy pipeline configuration options
+- Fix cycle limits and stopping conditions
+- Delta reporting for inter-cycle progress tracking
+
+**Decisions Made:**
+44. **Report Feed to Claude Code:** Full Report A for typical scans (<200k tokens). For larger reports, batch by severity — user selects which tiers to fix (e.g., "critical + high only").
+45. **Fix Safety Model:** All fixes made on dedicated git branch `gonogo/fix-<scan_id>` by default. User can opt-in to direct edits on current branch. Never destructive operations without explicit permission.
+46. **Deploy Pipeline:** Three modes — branch-based preview deploy (default for Vercel/Netlify), manual rebuild (local projects), or local dev server rescan (fast iteration). User configures deploy command at scan time.
+47. **Cycle Configuration:** Default 3 cycles, user-configurable. Stop conditions: GO verdict, max cycles reached, Claude Code budget exhausted, or user manual stop.
+48. **Delta Reporting:** Cycle 2+ receives delta report instead of full Report A. Sections: Fixed Since Last Cycle, Remaining Issues, New Issues Detected, Regressions, Priority Actions. Natural reprioritization as critical issues resolve.
+49. **Claude Code Integration:** Headless mode with file input (not stdin). User configures permissions, budget, allowed tools before loop starts. Allowed: Edit, Write, Read, Grep, Glob, Bash (limited). Not allowed: Task, ExitPlanMode, WebFetch.
+50. **Severity Escalation:** Not needed per cycle — delta report's priority actions section handles focus. Report naturally surfaces remaining issues as top priorities.
+
+---
 
 ### Session 1 — February 13, 2026
 

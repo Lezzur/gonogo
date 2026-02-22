@@ -21,6 +21,7 @@
 11. [Configuration & Environment](#11-configuration--environment)
 12. [Deployment](#12-deployment)
 13. [Strategic Context](#13-strategic-context)
+14. [Fix Loop Integration](#14-fix-loop-integration)
 
 ---
 
@@ -184,6 +185,12 @@ gonogo/
 │   ├── report_a_generation_v1.md
 │   ├── report_b_generation_v1.md
 │   └── CHANGELOG.md
+│
+├── fix_loop/                       # Automated fix loop integration
+│   ├── claude_code_runner.py      # Claude Code headless invocation
+│   ├── fix_orchestrator.py        # Fix cycle orchestration
+│   ├── deploy_pipeline.py         # Rebuild/redeploy coordination
+│   └── delta_reporter.py          # Inter-cycle delta reporting
 │
 ├── storage/                        # V1 local file storage (gitignored)
 │   ├── screenshots/
@@ -1270,6 +1277,491 @@ Report A tone: No personality. Pure structured data.
 ### V1 Definition of Done (Repeated for Emphasis)
 
 Pick an existing BaryApps tool → run GoNoGo → take Report A → paste it into Claude Code → the coding AI understands every finding and can act on it without asking for clarification → the fixes are actually correct and useful. **If that works, V1 ships.**
+
+---
+
+## 14. FIX LOOP INTEGRATION
+
+### Overview
+
+GoNoGo includes an **automated fix loop** that feeds Report A directly to Claude Code in headless mode, monitors fix progress, triggers rebuilds/redeploys, rescans the fixed version, and iterates until the verdict reaches GO or the cycle limit is reached.
+
+### Prerequisites
+
+Before using the fix loop:
+
+1. **Claude Code installed** — The CLI must be available on the system path
+2. **Git repository** — The target project must be a git repository
+3. **Deploy pipeline configured** — User must specify how to rebuild/redeploy (or use local dev server)
+4. **Token budget** — User must set a Claude Code token budget per cycle
+
+### Architecture
+
+```
+[GoNoGo Scan] → Report A Generated
+       ↓
+[Fix Loop Orchestrator]
+       ↓
+┌──────────────────────────────────────────┐
+│ CYCLE N (max 3 by default, configurable) │
+│                                          │
+│ 1. Feed Report A to Claude Code          │
+│    (headless mode, file input)           │
+│                                          │
+│ 2. Monitor progress via Claude Code API  │
+│    (permissions, budget, tool usage)     │
+│                                          │
+│ 3. Trigger rebuild/redeploy              │
+│    (branch-based preview deploy default) │
+│                                          │
+│ 4. Wait for deployment ready             │
+│                                          │
+│ 5. Rescan deployed version               │
+│    (full GoNoGo pipeline)                │
+│                                          │
+│ 6. Generate delta report                 │
+│    (what fixed, what regressed, new)     │
+│                                          │
+│ 7. Check verdict                         │
+│    → GO: Stop, success                   │
+│    → NO-GO/CONDITIONS: Next cycle        │
+└──────────────────────────────────────────┘
+```
+
+### Claude Code Headless Integration
+
+**Invocation Method:**
+
+Report A is fed to Claude Code via **file input** (not stdin), allowing Claude Code to parse the full structured markdown with proper formatting.
+
+```bash
+claude-code --headless \
+  --file report_a.md \
+  --budget 100000 \
+  --permissions "edit,write,bash:git*,bash:npm*" \
+  --workspace /path/to/project
+```
+
+**Configuration:**
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `--budget` | 100,000 tokens | Configurable per cycle. If exceeded, cycle stops with partial fixes. |
+| `--permissions` | Configured at scan time | User reviews allowed tools before starting loop. |
+| `--timeout` | 30 minutes | Max duration per fix cycle. |
+| `--allowed-tools` | Edit, Write, Bash (limited), Read, Grep, Glob | No Task, no ExitPlanMode. |
+| `--allowed-bash` | Git operations, build commands (user-configured) | No destructive operations (rm -rf, force push, etc.) unless explicitly allowed. |
+
+**Allowed Tools:**
+
+- **Edit, Write, Read** — Core file operations
+- **Grep, Glob** — Code search
+- **Bash** — Limited to git operations and build commands (user-configured whitelist)
+- **NOT allowed** — Task (no subagents), ExitPlanMode, WebFetch, WebSearch
+
+**Permissions Model:**
+
+User reviews and approves the following before fix loop starts:
+1. Which bash commands Claude Code can run (git add/commit, npm build, etc.)
+2. Token budget per cycle
+3. Whether Claude Code can create new files (default: yes for fix implementations)
+4. Whether Claude Code can modify existing files (default: yes)
+
+**Budget Management:**
+
+- If Claude Code exhausts the token budget mid-cycle, the cycle stops
+- Partial fixes are committed to the git branch
+- User can review progress and manually continue or adjust budget for next cycle
+
+### Git Branch Strategy
+
+**Default Behavior:**
+
+All fixes are made on a dedicated branch: `gonogo/fix-<scan_id>`
+
+**Workflow:**
+
+1. Before fix loop starts, create branch from current HEAD
+2. All Claude Code edits happen on this branch
+3. Each fix cycle commits changes with descriptive messages
+4. After all cycles complete (or user stops), user can:
+   - Review the branch diff
+   - Merge to main via PR
+   - Discard the branch
+
+**Direct Edit Option:**
+
+User can opt-in to direct edits on current branch (bypassing gonogo/fix-* branch creation). Must be explicitly chosen at scan time.
+
+**Safety:**
+
+- Never force push
+- Never modify git config
+- Never run destructive git commands (reset --hard, clean -f, etc.) without explicit user permission
+- All commits include scan_id in message for traceability
+
+### Deploy Pipeline Configuration
+
+**Three Deployment Modes:**
+
+| Mode | When to Use | How It Works |
+|------|-------------|--------------|
+| **Branch-based preview deploy** (default) | Vercel, Netlify, Railway with branch deploys | Push to `gonogo/fix-<scan_id>` → wait for preview URL → rescan preview |
+| **Manual rebuild** | Local projects, non-automated deploys | Run user-configured build command → rescan localhost |
+| **Local dev server rescan** | Fast iteration, no rebuild needed | Rescan existing dev server (assumes hot reload) |
+
+**User Configuration (at scan time):**
+
+```json
+{
+  "deploy_mode": "branch_preview",
+  "deploy_command": "git push origin gonogo/fix-{scan_id}",
+  "preview_url_pattern": "https://gonogo-fix-{scan_id}.vercel.app",
+  "wait_for_deploy": true,
+  "deploy_timeout_seconds": 300
+}
+```
+
+**Manual Rebuild Example:**
+
+```json
+{
+  "deploy_mode": "manual_rebuild",
+  "build_command": "npm run build && npm run preview",
+  "rescan_url": "http://localhost:4173"
+}
+```
+
+**Local Dev Server Example:**
+
+```json
+{
+  "deploy_mode": "dev_server",
+  "rescan_url": "http://localhost:5173"
+}
+```
+
+### Cycle Configuration
+
+**Default Settings:**
+
+- **Max cycles:** 3
+- **Stop conditions:**
+  - Verdict = GO
+  - Max cycles reached
+  - Claude Code budget exhausted
+  - User manually stops
+  - Critical error (deployment failed, rescan failed, etc.)
+
+**User-Configurable:**
+
+```json
+{
+  "max_cycles": 3,
+  "stop_on_verdict": "GO",
+  "continue_on_conditions": false,
+  "budget_per_cycle": 100000,
+  "allow_partial_fixes": true
+}
+```
+
+**Behavior:**
+
+- **Cycle 1:** Full Report A fed to Claude Code
+- **Cycle 2+:** Delta report fed (what remains unfixed + what regressed)
+- Each cycle commits fixes with message: `gonogo fix cycle N: <summary>`
+
+### Delta Reporting (Cycle 2+)
+
+**Purpose:** After Cycle 1, subsequent cycles receive a **delta report** instead of the full Report A.
+
+**Delta Report Sections:**
+
+```markdown
+# GoNoGo Delta Report — Cycle N
+# Previous Score: 72/100 (C+) → Current Score: 78/100 (B-)
+# Verdict: NO-GO → GO WITH CONDITIONS
+
+## Fixed Since Last Cycle
+- [FUNC-001] Checkout form submission bug → RESOLVED
+- [A11Y-003] Product image alt text → RESOLVED (42/43 fixed)
+
+## Remaining Issues
+- [PERF-002] Hero image size (2.4MB) → UNFIXED
+- [DESIGN-005] Inconsistent button padding → UNFIXED
+
+## New Issues Detected
+- [FUNC-007] Form validation broken by Cycle 1 fix → NEW CRITICAL
+
+## Regressions
+- [UX-004] Mobile nav previously working, now broken → REGRESSION
+
+## Priority Actions for This Cycle
+1. Fix FUNC-007 (new critical introduced in last cycle)
+2. Investigate UX-004 regression
+3. Address PERF-002 (hero image optimization)
+```
+
+**Why Delta Reporting:**
+
+- Avoids re-fixing already-resolved issues
+- Highlights regressions (fixes that broke something else)
+- Focuses Claude Code's attention on remaining work
+- Tracks fix velocity across cycles
+
+**Report Naturally Deprioritizes:**
+
+As critical issues are resolved, the remaining issues naturally rise in priority. No explicit severity escalation needed per cycle — the delta report's "Priority Actions" section handles this.
+
+### New API Endpoints
+
+#### POST `/api/scans/{scan_id}/fix-loop/start`
+
+**Purpose:** Start the automated fix loop for a completed scan.
+
+**Request Body:**
+
+```json
+{
+  "deploy_config": {
+    "mode": "branch_preview",
+    "deploy_command": "git push origin gonogo/fix-{scan_id}",
+    "preview_url_pattern": "https://gonogo-fix-{scan_id}.vercel.app",
+    "wait_for_deploy": true,
+    "deploy_timeout_seconds": 300
+  },
+  "cycle_config": {
+    "max_cycles": 3,
+    "stop_on_verdict": "GO",
+    "budget_per_cycle": 100000
+  },
+  "claude_code_config": {
+    "allowed_bash_commands": ["git add", "git commit", "npm run build", "npm run preview"],
+    "allowed_tools": ["Edit", "Write", "Read", "Grep", "Glob", "Bash"],
+    "workspace_path": "/path/to/project"
+  },
+  "git_config": {
+    "use_branch": true,
+    "branch_name": "gonogo/fix-{scan_id}",
+    "allow_direct_edits": false
+  }
+}
+```
+
+**Response:**
+
+```json
+{
+  "fix_loop_id": "fixloop_uuid",
+  "status": "running",
+  "current_cycle": 1,
+  "max_cycles": 3
+}
+```
+
+#### GET `/api/scans/{scan_id}/fix-loop/{fix_loop_id}`
+
+**Purpose:** Get fix loop status and progress.
+
+**Response:**
+
+```json
+{
+  "fix_loop_id": "fixloop_uuid",
+  "status": "running",
+  "current_cycle": 2,
+  "max_cycles": 3,
+  "cycles": [
+    {
+      "cycle_number": 1,
+      "status": "completed",
+      "tokens_used": 87340,
+      "fixes_applied": 12,
+      "verdict_after": "GO WITH CONDITIONS",
+      "score_after": 78
+    },
+    {
+      "cycle_number": 2,
+      "status": "running",
+      "tokens_used": 45200,
+      "current_step": "claude_code_fixing"
+    }
+  ]
+}
+```
+
+#### GET `/api/scans/{scan_id}/fix-loop/{fix_loop_id}/stream`
+
+**Purpose:** SSE stream of fix loop progress.
+
+**Events:**
+
+```
+event: cycle_start
+data: {"cycle": 2, "message": "Starting fix cycle 2 of 3"}
+
+event: claude_code_progress
+data: {"message": "Editing app/checkout/page.tsx", "tokens_used": 12340}
+
+event: deploy_start
+data: {"message": "Pushing to branch gonogo/fix-abc123"}
+
+event: rescan_start
+data: {"message": "Rescanning deployed version"}
+
+event: cycle_complete
+data: {"cycle": 2, "verdict": "GO", "score": 85, "message": "Verdict reached GO, stopping loop"}
+
+event: loop_complete
+data: {"total_cycles": 2, "final_verdict": "GO", "final_score": 85}
+```
+
+#### POST `/api/scans/{scan_id}/fix-loop/{fix_loop_id}/stop`
+
+**Purpose:** Manually stop the fix loop.
+
+**Response:**
+
+```json
+{
+  "message": "Fix loop stopped after cycle 2",
+  "final_verdict": "GO WITH CONDITIONS",
+  "final_score": 78
+}
+```
+
+#### GET `/api/scans/{scan_id}/fix-loop/{fix_loop_id}/delta/{cycle_number}`
+
+**Purpose:** Download delta report for a specific cycle.
+
+**Response:** Markdown file download.
+
+### New Data Models
+
+#### FixLoop Model
+
+```python
+class FixLoop(Base):
+    __tablename__ = "fix_loops"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    scan_id = Column(String, ForeignKey("scans.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Configuration
+    deploy_config = Column(JSON, nullable=False)
+    cycle_config = Column(JSON, nullable=False)
+    claude_code_config = Column(JSON, nullable=False)
+    git_config = Column(JSON, nullable=False)
+
+    # Status
+    status = Column(String, default="pending")  # pending | running | completed | failed | stopped
+    current_cycle = Column(Integer, default=0)
+    max_cycles = Column(Integer, nullable=False)
+
+    # Results
+    final_verdict = Column(String, nullable=True)
+    final_score = Column(Integer, nullable=True)
+    total_tokens_used = Column(Integer, default=0)
+    total_fixes_applied = Column(Integer, default=0)
+```
+
+#### FixCycle Model
+
+```python
+class FixCycle(Base):
+    __tablename__ = "fix_cycles"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    fix_loop_id = Column(String, ForeignKey("fix_loops.id"), nullable=False)
+    cycle_number = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Status
+    status = Column(String, default="pending")  # pending | running | completed | failed
+    current_step = Column(String, nullable=True)
+
+    # Claude Code execution
+    claude_code_session_id = Column(String, nullable=True)
+    tokens_used = Column(Integer, default=0)
+    budget_exhausted = Column(Boolean, default=False)
+
+    # Fixes
+    fixes_applied = Column(Integer, default=0)
+    files_modified = Column(JSON, nullable=True)  # List of file paths
+    git_commits = Column(JSON, nullable=True)     # List of commit SHAs
+
+    # Rescan results
+    rescan_id = Column(String, nullable=True)
+    verdict_after = Column(String, nullable=True)
+    score_after = Column(Integer, nullable=True)
+    score_delta = Column(Integer, nullable=True)  # Change from previous cycle
+
+    # Delta report
+    delta_report_path = Column(String, nullable=True)
+    fixed_issues = Column(JSON, nullable=True)
+    remaining_issues = Column(JSON, nullable=True)
+    new_issues = Column(JSON, nullable=True)
+    regressions = Column(JSON, nullable=True)
+```
+
+### New Config Schema
+
+Add to `.env.example`:
+
+```env
+# Fix Loop Configuration
+CLAUDE_CODE_PATH=claude-code
+CLAUDE_CODE_DEFAULT_BUDGET=100000
+CLAUDE_CODE_MAX_TIMEOUT_SECONDS=1800
+FIX_LOOP_MAX_CYCLES=3
+FIX_LOOP_DEFAULT_DEPLOY_TIMEOUT=300
+```
+
+### Implementation Notes
+
+**Error Handling:**
+
+- If Claude Code crashes mid-cycle, save partial progress, mark cycle as failed, allow user to resume or retry
+- If deployment fails, mark cycle as failed, provide error details, allow manual intervention
+- If rescan fails, retry once, then mark cycle as failed
+
+**Safety:**
+
+- All git operations logged and traceable
+- All Claude Code permissions explicitly approved by user before loop starts
+- Token budget prevents runaway costs
+- Deploy timeout prevents infinite waits
+- Max cycles prevents infinite loops
+
+**Performance:**
+
+- Claude Code runs in headless mode (no UI overhead)
+- Rescans reuse existing Playwright browser instance if possible
+- Delta reports are lightweight (only changed findings)
+
+**User Experience:**
+
+- Clear progress indicators via SSE stream
+- Ability to pause/resume fix loop
+- Downloadable delta reports for each cycle
+- Git branch diffs reviewable at any time
+
+### Build Order Impact
+
+**New Phase: Fix Loop (Phase 10):**
+
+Build this after Phase 9 (polish & hardening):
+
+1. Implement `claude_code_runner.py` — headless invocation with permission sandboxing
+2. Implement `fix_orchestrator.py` — cycle management, delta generation
+3. Implement `deploy_pipeline.py` — rebuild/redeploy coordination for all three modes
+4. Wire up new API endpoints for fix loop control
+5. Add FixLoop and FixCycle models to database
+6. Build frontend UI for fix loop configuration and progress monitoring
+7. Test end-to-end: scan → fix loop → branch preview → rescan → delta → cycle 2 → GO verdict
 
 ---
 
