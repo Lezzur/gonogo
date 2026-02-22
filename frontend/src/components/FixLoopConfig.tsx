@@ -1,5 +1,6 @@
 import { useState, FormEvent } from 'react'
 import { checkFixLoopPrerequisites, startFixLoop, PrerequisiteCheckResponse, FixLoopStartResponse } from '../api/client'
+import { useSettings } from '../context/SettingsContext'
 
 interface FixLoopConfigProps {
   scanId: string
@@ -9,25 +10,27 @@ interface FixLoopConfigProps {
 }
 
 export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStarted }: FixLoopConfigProps) {
-  const [repoPath, setRepoPath] = useState('')
+  const { settings } = useSettings()
+
+  const [repoPath, setRepoPath] = useState(settings.defaultRepoPath)
   const [prerequisiteCheck, setPrerequisiteCheck] = useState<PrerequisiteCheckResponse | null>(null)
   const [isChecking, setIsChecking] = useState(false)
   const [checkError, setCheckError] = useState('')
 
-  const [applyMode, setApplyMode] = useState<'branch' | 'direct'>('branch')
-  const [permissionMode, setPermissionMode] = useState<'full' | 'cautious'>('full')
+  const [applyMode, setApplyMode] = useState<'branch' | 'direct'>(settings.applyMode)
+  const [permissionMode, setPermissionMode] = useState<'full' | 'cautious'>(settings.permissionMode)
 
-  const [severityCritical, setSeverityCritical] = useState(true)
-  const [severityHigh, setSeverityHigh] = useState(true)
-  const [severityMedium, setSeverityMedium] = useState(false)
-  const [severityLow, setSeverityLow] = useState(false)
+  const [severityCritical, setSeverityCritical] = useState(settings.severityFilter.critical)
+  const [severityHigh, setSeverityHigh] = useState(settings.severityFilter.high)
+  const [severityMedium, setSeverityMedium] = useState(settings.severityFilter.medium)
+  const [severityLow, setSeverityLow] = useState(settings.severityFilter.low)
 
-  const [deployMode, setDeployMode] = useState<'preview' | 'local' | 'manual'>('preview')
-  const [deployCommand, setDeployCommand] = useState('vercel deploy --branch {branch}')
-  const [localDevUrl, setLocalDevUrl] = useState('http://localhost:3000')
+  const [deployMode, setDeployMode] = useState<'preview' | 'local' | 'manual'>(settings.deployMode)
+  const [deployCommand, setDeployCommand] = useState(settings.deployCommand)
+  const [localDevUrl, setLocalDevUrl] = useState(settings.localDevUrl)
 
-  const [maxCycles, setMaxCycles] = useState(3)
-  const [stopCondition, setStopCondition] = useState<'GO' | 'GO_WITH_CONDITIONS' | 'manual'>('GO')
+  const [maxCycles, setMaxCycles] = useState(settings.maxCycles)
+  const [stopCondition, setStopCondition] = useState<'GO' | 'GO_WITH_CONDITIONS' | 'manual'>(settings.stopCondition)
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')

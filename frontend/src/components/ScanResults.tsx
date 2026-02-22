@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ScanResult, getReportUrl } from '../api/client'
 import FixLoopConfig from './FixLoopConfig'
 import FixLoopProgress from './FixLoopProgress'
+import { useSettings } from '../context/SettingsContext'
 
 interface ScanResultsProps {
   scan: ScanResult
@@ -54,6 +55,7 @@ function LensScoreCard({ name, score, grade, summary }: { name: string; score: n
 }
 
 export default function ScanResults({ scan, onLoopComplete }: ScanResultsProps) {
+  const { settings } = useSettings()
   const [fixLoopActive, setFixLoopActive] = useState(false)
   const [loopId, setLoopId] = useState<string | null>(null)
 
@@ -175,8 +177,8 @@ export default function ScanResults({ scan, onLoopComplete }: ScanResultsProps) 
         <div className="border-t border-gray-200 pt-8">
           <FixLoopConfig
             scanId={scan.id}
-            apiKey={localStorage.getItem('apiKey') || ''}
-            llmProvider={localStorage.getItem('llmProvider') || 'gemini'}
+            apiKey={settings.apiKey}
+            llmProvider={settings.llmProvider}
             onLoopStarted={handleLoopStarted}
           />
         </div>

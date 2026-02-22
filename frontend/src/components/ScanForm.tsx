@@ -2,16 +2,18 @@ import { useState, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createScan } from '../api/client'
 import { useActiveScan } from '../context/ActiveScanContext'
+import { useSettings } from '../context/SettingsContext'
 
 export default function ScanForm() {
   const navigate = useNavigate()
   const { setActiveScan } = useActiveScan()
+  const { settings } = useSettings()
   const [url, setUrl] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [llmProvider, setLlmProvider] = useState('gemini')
+  const [apiKey, setApiKey] = useState(settings.apiKey)
+  const [llmProvider, setLlmProvider] = useState<string>(settings.llmProvider)
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const [userBrief, setUserBrief] = useState('')
-  const [techStack, setTechStack] = useState('')
+  const [userBrief, setUserBrief] = useState(settings.defaultUserBrief)
+  const [techStack, setTechStack] = useState(settings.defaultTechStack)
   const [testRoute, setTestRoute] = useState('')
   const [authUsername, setAuthUsername] = useState('')
   const [authPassword, setAuthPassword] = useState('')
