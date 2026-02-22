@@ -1,1 +1,1 @@
-# GoNoGo Backend Services
+"""Services package for GoNoGo backend."""
