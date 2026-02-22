@@ -31,6 +31,23 @@ MAX_SHALLOW_PAGES = int(os.getenv("MAX_SHALLOW_PAGES", 100))
 MAX_SCAN_DURATION_SECONDS = int(os.getenv("MAX_SCAN_DURATION_SECONDS", 600))
 MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", 10))
 
+# Fix loop — cycle control
+DEFAULT_MAX_CYCLES = int(os.getenv("DEFAULT_MAX_CYCLES", 3))
+DEFAULT_STOP_ON_VERDICT = os.getenv("DEFAULT_STOP_ON_VERDICT", "GO")
+
+# Fix loop — deployment & fix application
+DEFAULT_DEPLOY_MODE = os.getenv("DEFAULT_DEPLOY_MODE", "branch")
+DEFAULT_APPLY_MODE = os.getenv("DEFAULT_APPLY_MODE", "branch")
+FIX_BRANCH_PREFIX = os.getenv("FIX_BRANCH_PREFIX", "gonogo/fix-")
+
+# Fix loop — Claude Code integration
+CLAUDE_CODE_PATH = os.getenv("CLAUDE_CODE_PATH", "claude")
+CLAUDE_CODE_MAX_TURNS = int(os.getenv("CLAUDE_CODE_MAX_TURNS", 50))
+CLAUDE_CODE_TIMEOUT_SECONDS = int(os.getenv("CLAUDE_CODE_TIMEOUT_SECONDS", 600))
+CLAUDE_CODE_PERMISSION_MODE = os.getenv("CLAUDE_CODE_PERMISSION_MODE", "bypassPermissions")
+CLAUDE_CODE_ALLOWED_TOOLS = os.getenv("CLAUDE_CODE_ALLOWED_TOOLS", "Read,Write,Edit,Bash(npm run *),Bash(npx *),Bash(git diff *),Bash(git status)")
+CLAUDE_CODE_MAX_BUDGET_USD = float(os.getenv("CLAUDE_CODE_MAX_BUDGET_USD", 5.0))
+
 # Ensure directories exist
 SCREENSHOTS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
