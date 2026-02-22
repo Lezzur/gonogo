@@ -1,0 +1,223 @@
+/* GoNoGo TUI Stylesheet */
+
+Screen {
+    background: $background;
+}
+
+/* ── Home Screen ── */
+
+#home-container {
+    align: center middle;
+    width: 100%;
+    height: 100%;
+}
+
+#home-title {
+    text-align: center;
+    text-style: bold;
+    color: #22c55e;
+    margin-bottom: 1;
+    width: 100%;
+}
+
+#home-subtitle {
+    text-align: center;
+    color: $text-muted;
+    margin-bottom: 2;
+    width: 100%;
+}
+
+#home-menu {
+    align: center middle;
+    width: auto;
+    height: auto;
+    padding: 1 2;
+}
+
+#home-menu Button {
+    width: 40;
+    margin: 1 0;
+}
+
+#home-version {
+    text-align: center;
+    color: $text-muted;
+    margin-top: 2;
+    width: 100%;
+}
+
+/* ── Scan Screen ── */
+
+#scan-container {
+    padding: 1 2;
+}
+
+#scan-form {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#scan-form Input {
+    margin-bottom: 1;
+}
+
+#scan-progress-area {
+    height: auto;
+    margin-top: 1;
+    padding: 1 2;
+    border: round $primary;
+}
+
+#scan-progress-label {
+    margin-bottom: 1;
+}
+
+/* ── Results Screen ── */
+
+#results-container {
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+#results-header {
+    height: auto;
+    layout: horizontal;
+    margin-bottom: 1;
+}
+
+#results-url {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#results-verdict-area {
+    width: 1fr;
+    align: center middle;
+    height: auto;
+}
+
+#results-score-area {
+    width: 1fr;
+    height: auto;
+    padding: 1;
+}
+
+#results-actions {
+    margin: 1 0;
+    padding: 1 2;
+    border: round $accent;
+    height: auto;
+}
+
+#results-actions-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#results-findings-summary {
+    margin: 1 0;
+    height: auto;
+}
+
+#results-warnings {
+    margin: 1 0;
+    padding: 1 2;
+    background: #78350f;
+    color: #fbbf24;
+    height: auto;
+}
+
+/* ── History Screen ── */
+
+#history-container {
+    padding: 1 2;
+}
+
+#history-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#history-table {
+    height: 1fr;
+}
+
+/* ── Settings Screen ── */
+
+#settings-container {
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+#settings-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.settings-section {
+    margin: 1 0;
+    padding: 1 2;
+    border: round $primary;
+    height: auto;
+}
+
+.settings-section-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+.settings-section Input,
+.settings-section Select {
+    margin-bottom: 1;
+}
+
+#settings-buttons {
+    layout: horizontal;
+    height: auto;
+    margin-top: 1;
+}
+
+#settings-buttons Button {
+    margin-right: 2;
+}
+
+#settings-status {
+    margin-top: 1;
+    color: #22c55e;
+}
+
+/* ── Fix Loop Screen ── */
+
+#fixloop-container {
+    padding: 1 2;
+    overflow-y: auto;
+}
+
+#fixloop-title {
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#fixloop-config {
+    margin: 1 0;
+    padding: 1 2;
+    border: round $primary;
+    height: auto;
+}
+
+#fixloop-config Input,
+#fixloop-config Select {
+    margin-bottom: 1;
+}
+
+#fixloop-progress-area {
+    margin: 1 0;
+    padding: 1 2;
+    border: round $accent;
+    height: auto;
+}
+
+#fixloop-cycles {
+    margin: 1 0;
+    height: auto;
+}
