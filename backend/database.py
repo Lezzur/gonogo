@@ -19,5 +19,5 @@ def get_db():
         db.close()
 
 def init_db():
-    from models import Scan
+    from models import Scan, FixCycle
     Base.metadata.create_all(bind=engine)

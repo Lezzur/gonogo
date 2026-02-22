@@ -14,6 +14,15 @@ class ScanCreateRequest(BaseModel):
     auth_username: Optional[str] = None
     auth_password: Optional[str] = None
     auth_token: Optional[str] = None
+    # Fix loop fields
+    fix_loop_enabled: bool = False
+    max_cycles: int = 3
+    stop_on_verdict: str = "GO"  # "GO", "GO_WITH_CONDITIONS", "never"
+    deploy_mode: str = "branch"  # "branch", "manual", "local"
+    deploy_command: Optional[str] = None
+    severity_filter: Optional[List[str]] = None  # e.g. ["critical", "high"]
+    apply_mode: str = "branch"  # "branch" or "direct"
+    repo_path: Optional[str] = None
 
 
 # Response schemas
@@ -46,6 +55,10 @@ class ScanResultResponse(BaseModel):
     completed_at: Optional[datetime] = None
     report_a_available: bool = False
     report_b_available: bool = False
+    # Fix loop fields
+    parent_scan_id: Optional[str] = None
+    current_cycle: Optional[int] = None
+    fix_branch: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -53,6 +66,46 @@ class ScanResultResponse(BaseModel):
 
 class ScanListResponse(BaseModel):
     scans: List[ScanResultResponse]
+
+
+# Fix Loop schemas
+class FixCycleResponse(BaseModel):
+    id: str
+    scan_id: str
+    cycle_number: int
+    rescan_id: Optional[str] = None
+    status: str  # pending, fixing, deploying, rescanning, completed, failed
+    claude_code_output: Optional[str] = None
+    claude_code_cost_usd: Optional[float] = None
+    claude_code_duration_seconds: Optional[float] = None
+    files_modified: Optional[List[str]] = None
+    findings_resolved: int = 0
+    findings_new: int = 0
+    findings_unchanged: int = 0
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FixLoopStartRequest(BaseModel):
+    repo_path: str
+    apply_mode: str = "branch"  # "branch" or "direct"
+    deploy_mode: str = "branch"  # "branch", "manual", "local"
+    deploy_command: Optional[str] = None
+    max_cycles: int = 3
+    stop_on_verdict: str = "GO"  # "GO", "GO_WITH_CONDITIONS", "never"
+    severity_filter: Optional[List[str]] = None  # e.g. ["critical", "high"]
+
+
+class FixLoopStatusResponse(BaseModel):
+    current_cycle: int
+    total_cycles: int
+    status: str
+    cycles: List[FixCycleResponse] = []
+    fix_branch: Optional[str] = None
 
 
 # Finding schemas (used in pipeline)
