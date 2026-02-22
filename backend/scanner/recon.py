@@ -983,12 +983,13 @@ async def run_reconnaissance(
         main_response_headers: Dict[str, str] = {}
 
         try:
-            # Navigate to main URL first
+            # Navigate to main URL — use domcontentloaded as baseline, then
+            # optionally wait for networkidle (some sites never reach it)
+            main_response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             try:
-                main_response = await page.goto(url, wait_until="networkidle", timeout=30000)
+                await page.wait_for_load_state("networkidle", timeout=15000)
             except Exception:
-                # networkidle may never fire on busy sites; fall back to domcontentloaded
-                main_response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                pass  # Page loaded but network still active — continue anyway
             initial_url = page.url
 
             # Capture response headers for security analysis
