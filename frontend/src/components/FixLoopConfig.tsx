@@ -460,9 +460,6 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
             >
               {isSubmitting ? 'Starting Fix Loop...' : 'Start Automated Fix Loop'}
             </button>
-            <p className="mt-2 text-center text-sm text-gray-500">
-              Estimated cost: ~$2-5 per cycle
-            </p>
           </div>
         </form>
       </div>

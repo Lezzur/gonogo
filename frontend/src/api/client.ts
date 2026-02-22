@@ -1,5 +1,7 @@
 const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api`
 
+export const isRemoteBackend = Boolean(import.meta.env.VITE_API_URL)
+
 export interface ScanCreateRequest {
   url: string
   user_brief?: string

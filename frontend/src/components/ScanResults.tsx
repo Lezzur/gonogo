@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ScanResult, getReportUrl } from '../api/client'
+import { ScanResult, getReportUrl, isRemoteBackend } from '../api/client'
 import FixLoopConfig from './FixLoopConfig'
 import FixLoopProgress from './FixLoopProgress'
 import { useSettings } from '../context/SettingsContext'
@@ -186,12 +186,37 @@ export default function ScanResults({ scan, onLoopComplete }: ScanResultsProps) 
 
       {showFixLoopConfig && (
         <div className="border-t border-gray-200 pt-8">
-          <FixLoopConfig
-            scanId={scan.id}
-            apiKey={settings.apiKey}
-            llmProvider={settings.llmProvider}
-            onLoopStarted={handleLoopStarted}
-          />
+          {isRemoteBackend ? (
+            <div className="max-w-3xl mx-auto">
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h2 className="text-2xl font-bold text-gray-900">Automated Fix Loop</h2>
+                <p className="text-gray-600 mt-1 mb-4">
+                  Claude Code will fix issues, redeploy, and rescan automatically.
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                  <div className="flex gap-2">
+                    <span className="text-amber-600 flex-shrink-0">&#9888;</span>
+                    <div className="text-sm text-amber-800">
+                      <p className="font-medium mb-1">Requires local backend</p>
+                      <p>
+                        The fix loop needs direct access to your repository on disk. Run the GoNoGo backend
+                        locally (<code className="bg-amber-100 px-1 rounded">python main.py</code>) and
+                        point the frontend at <code className="bg-amber-100 px-1 rounded">http://localhost:8000</code> to
+                        use this feature.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <FixLoopConfig
+              scanId={scan.id}
+              apiKey={settings.apiKey}
+              llmProvider={settings.llmProvider}
+              onLoopStarted={handleLoopStarted}
+            />
+          )}
         </div>
       )}
 
