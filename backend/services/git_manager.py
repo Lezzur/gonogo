@@ -1,9 +1,12 @@
 """Git branch management for the GoNoGo fix loop."""
 
 import asyncio
+import logging
 from pathlib import Path
 
 from backend.config import FIX_BRANCH_PREFIX
+
+logger = logging.getLogger(__name__)
 
 
 class GitError(Exception):
@@ -13,21 +16,44 @@ class GitError(Exception):
 
 
 class NotAGitRepoError(GitError):
-    """Raised when the path is not a git repository."""
+    """Raised when the path is not a git repository.
 
-    pass
+    Suggests using direct mode instead of branch mode.
+    """
+
+    def __init__(self, repo_path: str):
+        message = (
+            f"'{repo_path}' is not a git repository.\n\n"
+            "Options:\n"
+            "  1. Initialize git: cd <repo> && git init\n"
+            "  2. Use apply_mode='direct' to apply fixes without git branching"
+        )
+        super().__init__(message)
+        self.repo_path = repo_path
 
 
 class DirtyWorkingTreeError(GitError):
     """Raised when the working tree has uncommitted changes."""
 
-    pass
+    def __init__(self, repo_path: str):
+        message = (
+            f"Working tree has uncommitted changes in '{repo_path}'.\n\n"
+            "Commit or stash changes before starting the fix loop:\n"
+            "  git add . && git commit -m 'WIP'\n"
+            "  # or\n"
+            "  git stash"
+        )
+        super().__init__(message)
+        self.repo_path = repo_path
 
 
 class BranchExistsError(GitError):
     """Raised when trying to create a branch that already exists."""
 
-    pass
+    def __init__(self, branch_name: str):
+        message = f"Branch '{branch_name}' already exists"
+        super().__init__(message)
+        self.branch_name = branch_name
 
 
 class GitManager:
@@ -106,12 +132,15 @@ class GitManager:
         )
         return returncode == 0
 
-    async def create_fix_branch(self, repo_path: str, scan_id: str) -> str:
+    async def create_fix_branch(
+        self, repo_path: str, scan_id: str, auto_suffix: bool = True
+    ) -> str:
         """Create and checkout a new fix branch.
 
         Args:
             repo_path: Path to the git repository.
             scan_id: The scan ID (first 8 chars used in branch name).
+            auto_suffix: If True, automatically add suffix counter when branch exists.
 
         Returns:
             The created branch name.
@@ -119,29 +148,50 @@ class GitManager:
         Raises:
             NotAGitRepoError: If repo_path is not a git repository.
             DirtyWorkingTreeError: If there are uncommitted changes.
-            BranchExistsError: If the branch already exists.
+            BranchExistsError: If the branch already exists and auto_suffix is False.
         """
         if not await self.is_git_repo(repo_path):
-            raise NotAGitRepoError(f"{repo_path} is not a git repository")
+            logger.error(f"Not a git repository: {repo_path}")
+            raise NotAGitRepoError(repo_path)
+
+        # Check for uncommitted changes FIRST (before storing original branch)
+        if await self._has_uncommitted_changes(repo_path):
+            logger.error(f"Dirty working tree: {repo_path}")
+            raise DirtyWorkingTreeError(repo_path)
 
         # Store original branch before switching
         original = await self.get_current_branch(repo_path)
         repo_key = str(Path(repo_path).resolve())
         self._original_branches[repo_key] = original
+        logger.debug(f"Stored original branch '{original}' for {repo_path}")
 
-        branch_name = f"{FIX_BRANCH_PREFIX}{scan_id[:8]}"
+        # Find available branch name (with suffix counter if needed)
+        base_branch_name = f"{FIX_BRANCH_PREFIX}{scan_id[:8]}"
+        branch_name = base_branch_name
 
         if await self._branch_exists(repo_path, branch_name):
-            raise BranchExistsError(f"Branch {branch_name} already exists")
+            if not auto_suffix:
+                raise BranchExistsError(branch_name)
 
-        # Check for uncommitted changes
-        if await self._has_uncommitted_changes(repo_path):
-            raise DirtyWorkingTreeError(
-                "Working tree has uncommitted changes. Commit or stash them first."
-            )
+            # Try suffixes: -2, -3, -4, ... up to -99
+            for suffix in range(2, 100):
+                candidate = f"{base_branch_name}-{suffix}"
+                if not await self._branch_exists(repo_path, candidate):
+                    branch_name = candidate
+                    logger.info(f"Branch '{base_branch_name}' exists, using '{branch_name}' instead")
+                    break
+            else:
+                # Exhausted all suffixes
+                logger.error(f"Could not find available branch name for {base_branch_name}")
+                raise BranchExistsError(f"All branch names {base_branch_name}-2 through {base_branch_name}-99 exist")
 
         # Create and checkout the branch
-        await self._run_git(repo_path, "checkout", "-b", branch_name)
+        try:
+            await self._run_git(repo_path, "checkout", "-b", branch_name)
+            logger.info(f"Created and checked out branch '{branch_name}'")
+        except GitError as e:
+            logger.error(f"Failed to create branch '{branch_name}': {e}")
+            raise
 
         return branch_name
 

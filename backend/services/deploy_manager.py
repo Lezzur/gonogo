@@ -1,6 +1,7 @@
 """Deploy manager for triggering and monitoring deployments."""
 
 import asyncio
+import logging
 import re
 import time
 from typing import Optional
@@ -10,15 +11,18 @@ from pydantic import BaseModel
 
 from backend.config import DEFAULT_DEPLOY_MODE
 
+logger = logging.getLogger(__name__)
+
 
 class DeployResult(BaseModel):
     """Result of a deploy operation."""
 
-    status: str  # "success", "failed", "timeout", "awaiting_url"
+    status: str  # "success", "failed", "timeout", "awaiting_url", "command_not_found"
     stdout: str
     stderr: str
     deploy_url: Optional[str] = None
     duration_seconds: float
+    error_code: Optional[str] = None  # machine-readable error code for frontend
 
 
 class DeployError(Exception):
@@ -108,6 +112,7 @@ class DeployManager:
 
         # Handle special deploy modes
         if mode == "local":
+            logger.info(f"Local deploy mode: using URL {local_url}")
             return DeployResult(
                 status="success",
                 stdout="",
@@ -117,6 +122,7 @@ class DeployManager:
             )
 
         if mode == "manual":
+            logger.info("Manual deploy mode: awaiting user-provided URL")
             return DeployResult(
                 status="awaiting_url",
                 stdout="",
@@ -127,6 +133,7 @@ class DeployManager:
 
         # Substitute {branch} placeholder
         command = deploy_command.replace("{branch}", branch)
+        logger.info(f"Running deploy command: {command}")
 
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -144,21 +151,33 @@ class DeployManager:
                 proc.kill()
                 await proc.wait()
                 duration = time.time() - start_time
-                raise DeployTimeoutError(
-                    f"Deploy command timed out after {timeout_seconds}s"
+                logger.error(f"Deploy command timed out after {timeout_seconds}s")
+                # Return result instead of raising - allow orchestrator to handle
+                return DeployResult(
+                    status="deploy_failed",
+                    stdout="",
+                    stderr=f"Deploy command timed out after {timeout_seconds}s",
+                    deploy_url=None,
+                    duration_seconds=duration,
+                    error_code="DEPLOY_TIMEOUT",
                 )
 
             stdout = stdout_bytes.decode(errors="replace")
             stderr = stderr_bytes.decode(errors="replace")
             duration = time.time() - start_time
 
+            logger.debug(f"Deploy stdout: {stdout[:500]}...")
+            logger.debug(f"Deploy stderr: {stderr[:500]}...")
+
             if proc.returncode != 0:
+                logger.error(f"Deploy command failed with exit code {proc.returncode}: {stderr}")
                 return DeployResult(
-                    status="failed",
+                    status="deploy_failed",
                     stdout=stdout,
                     stderr=stderr,
                     deploy_url=None,
                     duration_seconds=duration,
+                    error_code="DEPLOY_NONZERO_EXIT",
                 )
 
             # Try to extract deploy URL from output
@@ -166,6 +185,7 @@ class DeployManager:
                 stderr
             )
 
+            logger.info(f"Deploy succeeded in {duration:.1f}s, URL: {deploy_url}")
             return DeployResult(
                 status="success",
                 stdout=stdout,
@@ -176,18 +196,36 @@ class DeployManager:
 
         except FileNotFoundError as e:
             duration = time.time() - start_time
-            raise CommandNotFoundError(f"Command not found: {e}")
+            logger.error(f"Deploy command not found: {e}")
+            return DeployResult(
+                status="deploy_failed",
+                stdout="",
+                stderr=f"Command not found: {e}. Ensure the deploy tool is installed and in PATH.",
+                deploy_url=None,
+                duration_seconds=duration,
+                error_code="DEPLOY_CMD_NOT_FOUND",
+            )
         except OSError as e:
+            duration = time.time() - start_time
             # Handle "command not found" errors on Windows
             if "The system cannot find the file specified" in str(e):
-                raise CommandNotFoundError(f"Command not found: {e}")
-            duration = time.time() - start_time
+                logger.error(f"Deploy command not found (Windows): {e}")
+                return DeployResult(
+                    status="deploy_failed",
+                    stdout="",
+                    stderr=f"Command not found: {e}. Ensure the deploy tool is installed and in PATH.",
+                    deploy_url=None,
+                    duration_seconds=duration,
+                    error_code="DEPLOY_CMD_NOT_FOUND",
+                )
+            logger.error(f"Deploy OS error: {e}")
             return DeployResult(
-                status="failed",
+                status="deploy_failed",
                 stdout="",
                 stderr=str(e),
                 deploy_url=None,
                 duration_seconds=duration,
+                error_code="DEPLOY_OS_ERROR",
             )
 
     async def wait_for_url(

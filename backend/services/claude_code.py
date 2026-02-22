@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,8 @@ from backend.config import (
     CLAUDE_CODE_PERMISSION_MODE,
     CLAUDE_CODE_TIMEOUT_SECONDS,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeCodeResult(BaseModel):
@@ -40,11 +43,35 @@ class ClaudeCodeError(Exception):
 class ClaudeCodeNotInstalledError(ClaudeCodeError):
     """Raised when Claude Code binary is not found or not executable."""
 
-    pass
+    def __init__(self, message: str = ""):
+        install_instructions = (
+            "Claude Code CLI is not installed or not accessible.\n\n"
+            "Install with:\n"
+            "  npm install -g @anthropic-ai/claude-code\n\n"
+            "Or if using npx:\n"
+            "  npx @anthropic-ai/claude-code --version\n\n"
+            "Ensure the 'claude' command is in your PATH."
+        )
+        full_message = f"{message}\n\n{install_instructions}" if message else install_instructions
+        super().__init__(full_message)
 
 
 class ClaudeCodeAuthError(ClaudeCodeError):
     """Raised when Claude Code is not authenticated."""
+
+    def __init__(self, message: str = ""):
+        auth_instructions = (
+            "Claude Code is not authenticated.\n\n"
+            "Run on the server:\n"
+            "  claude /login\n\n"
+            "This will open a browser for Anthropic authentication."
+        )
+        full_message = f"{message}\n\n{auth_instructions}" if message else auth_instructions
+        super().__init__(full_message)
+
+
+class ClaudeCodeBudgetExceededError(ClaudeCodeError):
+    """Raised when Claude Code exceeds the configured budget."""
 
     pass
 
@@ -127,7 +154,10 @@ class ClaudeCodeRunner:
         # Verify Claude Code is installed
         is_installed, version_or_error = await self.check_installed()
         if not is_installed:
+            logger.error(f"Claude Code not installed: {version_or_error}")
             raise ClaudeCodeNotInstalledError(version_or_error)
+
+        logger.info(f"Claude Code version: {version_or_error}")
 
         # Write report to temp file in repo (avoids stdin issues with large content)
         report_filename = f".gonogo-report-cycle-{cycle_number}.md"
@@ -213,16 +243,32 @@ class ClaudeCodeRunner:
             duration = asyncio.get_event_loop().time() - start_time
             stdout_str = stdout.decode("utf-8", errors="replace")
             stderr_str = stderr.decode("utf-8", errors="replace")
+            combined_output = stdout_str + stderr_str
+
+            logger.debug(f"Claude Code stdout: {stdout_str[:500]}...")
+            logger.debug(f"Claude Code stderr: {stderr_str[:500]}...")
 
             # Check for auth failure
-            combined_output = stdout_str + stderr_str
-            if "not authenticated" in combined_output.lower():
-                raise ClaudeCodeAuthError(
-                    "Claude Code is not authenticated. Run 'claude login' to authenticate."
+            if "not authenticated" in combined_output.lower() or "authentication" in combined_output.lower() and "failed" in combined_output.lower():
+                logger.error("Claude Code authentication failure detected")
+                raise ClaudeCodeAuthError()
+
+            # Check for budget exceeded (Claude Code self-terminates when budget is exceeded)
+            if "budget" in combined_output.lower() and ("exceeded" in combined_output.lower() or "limit" in combined_output.lower()):
+                logger.warning(f"Claude Code budget exceeded during fix cycle {cycle_number}. Budget limit: ${self.max_budget_usd}")
+                return ClaudeCodeResult(
+                    status="budget_exceeded",
+                    result_text="",
+                    cost_usd=self.max_budget_usd,  # Assume we hit the limit
+                    duration_seconds=duration,
+                    files_modified=[],
+                    error_message=f"Claude Code exceeded budget limit of ${self.max_budget_usd}. Partial fixes may have been applied.",
+                    raw_output=stdout_str,
                 )
 
             # Non-zero exit code
             if proc.returncode != 0:
+                logger.error(f"Claude Code exited with code {proc.returncode}: {stderr_str}")
                 return ClaudeCodeResult(
                     status="error",
                     result_text="",
@@ -232,6 +278,8 @@ class ClaudeCodeRunner:
                     error_message=f"Claude Code exited with code {proc.returncode}: {stderr_str}",
                     raw_output=stdout_str,
                 )
+
+            logger.info(f"Claude Code completed successfully in {duration:.1f}s")
 
             # Parse JSON output
             return self._parse_output(stdout_str, duration)

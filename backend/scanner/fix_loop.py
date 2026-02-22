@@ -10,8 +10,11 @@ This module orchestrates the fully automated fix loop that:
 """
 
 import asyncio
+import glob
+import logging
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -19,11 +22,21 @@ from sqlalchemy.orm import Session
 from backend.database import SessionLocal
 from backend.models import FixCycle, Scan
 from backend.schemas import FixLoopStartRequest
-from backend.services.claude_code import ClaudeCodeRunner
+from backend.services.claude_code import (
+    ClaudeCodeAuthError,
+    ClaudeCodeNotInstalledError,
+    ClaudeCodeRunner,
+)
 from backend.services.deploy_manager import DeployManager, DeployResult
-from backend.services.git_manager import GitManager
+from backend.services.git_manager import (
+    DirtyWorkingTreeError,
+    GitManager,
+    NotAGitRepoError,
+)
 from backend.services.report_feed import generate_delta_report, prepare_feed
 from backend.utils.progress import progress_manager
+
+logger = logging.getLogger(__name__)
 
 
 class FixLoopError(Exception):
@@ -48,6 +61,17 @@ class NoReportError(FixLoopError):
     """Raised when the scan has no report_a_path."""
 
     pass
+
+
+class RescanFailedError(FixLoopError):
+    """Raised when the rescan fails to complete."""
+
+    def __init__(self, rescan_id: str, status: str, partial_results: Optional[dict] = None):
+        message = f"Rescan {rescan_id} failed with status: {status}"
+        super().__init__(message)
+        self.rescan_id = rescan_id
+        self.status = status
+        self.partial_results = partial_results or {}
 
 
 class FixLoopOrchestrator:
@@ -192,10 +216,20 @@ class FixLoopOrchestrator:
                 )
                 scan.fix_branch = self._fix_branch
                 self.db.commit()
+                logger.info(f"Created fix branch: {self._fix_branch}")
                 await self._broadcast(
                     f"Created branch: {self._fix_branch}", "fix_loop_init", 10
                 )
+            except NotAGitRepoError as e:
+                logger.error(f"Not a git repo: {e}")
+                await progress_manager.send_error(self.scan_id, str(e))
+                raise
+            except DirtyWorkingTreeError as e:
+                logger.error(f"Dirty working tree: {e}")
+                await progress_manager.send_error(self.scan_id, str(e))
+                raise
             except Exception as e:
+                logger.error(f"Failed to create fix branch: {e}")
                 await progress_manager.send_error(
                     self.scan_id, f"Failed to create fix branch: {e}"
                 )
@@ -254,12 +288,30 @@ class FixLoopOrchestrator:
                     int(cycle_base_percent + 5),
                 )
                 tech_stack = self._get_tech_stack_string(scan)
-                result = await self.claude_code_runner.run_fixes(
-                    repo_path=repo_path,
-                    report_content=filtered_report,
-                    cycle_number=cycle_number,
-                    tech_stack=tech_stack,
-                )
+
+                try:
+                    result = await self.claude_code_runner.run_fixes(
+                        repo_path=repo_path,
+                        report_content=filtered_report,
+                        cycle_number=cycle_number,
+                        tech_stack=tech_stack,
+                    )
+                except ClaudeCodeNotInstalledError as e:
+                    logger.error(f"Claude Code not installed: {e}")
+                    fix_cycle.status = "failed"
+                    fix_cycle.error_message = str(e)
+                    fix_cycle.completed_at = datetime.now(timezone.utc)
+                    self.db.commit()
+                    await progress_manager.send_error(self.scan_id, str(e))
+                    raise
+                except ClaudeCodeAuthError as e:
+                    logger.error(f"Claude Code auth failure: {e}")
+                    fix_cycle.status = "failed"
+                    fix_cycle.error_message = str(e)
+                    fix_cycle.completed_at = datetime.now(timezone.utc)
+                    self.db.commit()
+                    await progress_manager.send_error(self.scan_id, str(e))
+                    raise
 
                 # Update FixCycle with Claude Code results
                 fix_cycle.claude_code_output = result.raw_output
@@ -270,7 +322,20 @@ class FixLoopOrchestrator:
                 self.db.commit()
 
                 # Check for Claude Code failure
-                if result.status != "success":
+                if result.status == "budget_exceeded":
+                    logger.warning(f"Claude Code budget exceeded in cycle {cycle_number}")
+                    fix_cycle.status = "budget_exceeded"
+                    fix_cycle.error_message = result.error_message
+                    fix_cycle.completed_at = datetime.now(timezone.utc)
+                    self.db.commit()
+                    await self._broadcast(
+                        f"Cycle {cycle_number}: Budget exceeded - partial fixes may have been applied. ${result.cost_usd:.2f} spent.",
+                        f"cycle_{cycle_number}_budget_exceeded",
+                        int(cycle_base_percent + 10),
+                    )
+                    # Continue to deploy/rescan to see what was fixed before budget ran out
+                elif result.status != "success":
+                    logger.error(f"Claude Code failed in cycle {cycle_number}: {result.error_message}")
                     fix_cycle.status = "failed"
                     fix_cycle.error_message = result.error_message or "Claude Code failed"
                     fix_cycle.completed_at = datetime.now(timezone.utc)
@@ -310,13 +375,20 @@ class FixLoopOrchestrator:
 
                 deploy_result = await self._handle_deploy(cycle_number, repo_path, scan.url)
 
-                if deploy_result.status == "failed":
+                if deploy_result.status in ("deploy_failed", "failed"):
+                    logger.error(f"Deploy failed in cycle {cycle_number}: {deploy_result.stderr}")
                     fix_cycle.status = "deploy_failed"
-                    fix_cycle.error_message = f"Deploy failed: {deploy_result.stderr}"
+                    error_detail = deploy_result.stderr[:500] if deploy_result.stderr else "Unknown error"
+                    fix_cycle.error_message = f"Deploy failed ({deploy_result.error_code or 'UNKNOWN'}): {error_detail}"
                     fix_cycle.completed_at = datetime.now(timezone.utc)
                     self.db.commit()
+                    # Broadcast with full stderr for debugging
+                    await progress_manager.send_error(
+                        self.scan_id,
+                        f"Deploy failed: {deploy_result.stderr}",
+                    )
                     await self._broadcast(
-                        f"Cycle {cycle_number}: Deploy failed - {deploy_result.stderr}",
+                        f"Cycle {cycle_number}: Deploy failed - {error_detail}",
                         f"cycle_{cycle_number}_deploy_failed",
                         int(cycle_base_percent + 25),
                     )
@@ -347,14 +419,27 @@ class FixLoopOrchestrator:
                 fix_cycle.status = "rescanning"
                 self.db.commit()
 
-                rescan_id = await self._run_rescan(rescan_url)
-                fix_cycle.rescan_id = rescan_id
+                try:
+                    rescan_id = await self._run_rescan(rescan_url)
+                    fix_cycle.rescan_id = rescan_id
+                except Exception as e:
+                    logger.error(f"Rescan failed in cycle {cycle_number}: {e}")
+                    fix_cycle.status = "rescan_failed"
+                    fix_cycle.error_message = f"Rescan failed: {e}"
+                    fix_cycle.completed_at = datetime.now(timezone.utc)
+                    self.db.commit()
+                    await progress_manager.send_error(
+                        self.scan_id, f"Rescan failed: {e}"
+                    )
+                    # Continue to next cycle or exit - the fixes were applied even if rescan failed
+                    continue
 
                 # Get rescan results
                 rescan = self.db.query(Scan).filter(Scan.id == rescan_id).first()
                 if rescan and rescan.status == "completed":
                     final_score = rescan.overall_score or 0
                     final_verdict = rescan.verdict or "UNKNOWN"
+                    logger.info(f"Rescan completed: score={final_score}, verdict={final_verdict}")
 
                     # Calculate delta
                     current_findings = self._extract_findings_from_scan(rescan)
@@ -377,8 +462,29 @@ class FixLoopOrchestrator:
                         int(cycle_base_percent + 60),
                     )
                 else:
+                    # Rescan exists but didn't complete - store partial results
+                    rescan_status = rescan.status if rescan else "not_found"
+                    logger.warning(f"Rescan {rescan_id} did not complete: status={rescan_status}")
+                    fix_cycle.status = "rescan_failed"
+                    fix_cycle.error_message = f"Rescan status: {rescan_status}"
+
+                    # Try to extract any partial results
+                    if rescan:
+                        partial_score = rescan.overall_score
+                        if partial_score is not None:
+                            logger.info(f"Storing partial rescan score: {partial_score}")
+                            # Store partial findings info even if scan didn't complete
+                            fix_cycle.findings_unchanged = rescan.findings_count or 0
+
+                    fix_cycle.completed_at = datetime.now(timezone.utc)
+                    self.db.commit()
+
+                    await progress_manager.send_error(
+                        self.scan_id,
+                        f"Rescan did not complete (status: {rescan_status}). Partial results may be available.",
+                    )
                     await self._broadcast(
-                        f"Cycle {cycle_number}: Rescan did not complete successfully",
+                        f"Cycle {cycle_number}: Rescan failed (status: {rescan_status})",
                         f"cycle_{cycle_number}_rescan_failed",
                         int(cycle_base_percent + 60),
                     )
@@ -423,6 +529,7 @@ class FixLoopOrchestrator:
             f"score {original_score}→{final_score} ({original_verdict}→{final_verdict}), "
             f"total cost ${total_cost_usd:.2f}"
         )
+        logger.info(summary)
         await self._broadcast(summary, "fix_loop_complete", 100)
 
         if self.config.apply_mode == "branch" and self._fix_branch:
@@ -431,6 +538,9 @@ class FixLoopOrchestrator:
                 "fix_loop_merge_reminder",
                 100,
             )
+
+        # Cleanup temp files
+        self.cleanup_temp_files(repo_path)
 
     async def _handle_deploy(
         self, cycle_number: int, repo_path: str, original_url: str
@@ -531,6 +641,28 @@ class FixLoopOrchestrator:
             "fix_loop_stopping",
             0,
         )
+
+    def cleanup_temp_files(self, repo_path: str) -> int:
+        """Remove all .gonogo-report-cycle-*.md temp files from the repo.
+
+        Args:
+            repo_path: Path to the repository.
+
+        Returns:
+            Number of files removed.
+        """
+        pattern = Path(repo_path) / ".gonogo-report-cycle-*.md"
+        removed = 0
+        for filepath in glob.glob(str(pattern)):
+            try:
+                Path(filepath).unlink()
+                logger.debug(f"Removed temp file: {filepath}")
+                removed += 1
+            except Exception as e:
+                logger.warning(f"Failed to remove temp file {filepath}: {e}")
+        if removed:
+            logger.info(f"Cleaned up {removed} temp report files from {repo_path}")
+        return removed
 
 
 async def start_fix_loop(
