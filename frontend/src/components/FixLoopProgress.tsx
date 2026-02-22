@@ -25,7 +25,7 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
   const [isReconnecting, setIsReconnecting] = useState(false)
 
   useEffect(() => {
-    let reconnectTimer: NodeJS.Timeout | null = null
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let currentUnsubscribe: (() => void) | null = null
 
     const connectToStream = () => {

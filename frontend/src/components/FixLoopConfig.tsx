@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, FormEvent } from 'react'
 import { checkFixLoopPrerequisites, startFixLoop, PrerequisiteCheckResponse, FixLoopStartResponse } from '../api/client'
 
 interface FixLoopConfigProps {
@@ -447,7 +447,7 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
           <div className="pt-4 border-t border-gray-200">
             <button
               type="submit"
-              disabled={isSubmitting || (prerequisiteCheck && !prerequisiteCheck.ready)}
+              disabled={isSubmitting || (prerequisiteCheck?.ready === false)}
               className="w-full py-4 px-6 bg-green-700 hover:bg-green-800 disabled:bg-green-400 text-white text-lg font-semibold rounded-lg transition-colors"
             >
               {isSubmitting ? 'Starting Fix Loop...' : 'Start Automated Fix Loop'}
