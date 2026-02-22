@@ -85,6 +85,17 @@ export default function ScanResults({ scan, onLoopComplete }: ScanResultsProps) 
 
   return (
     <div className="space-y-8">
+      {scan.warnings && scan.warnings.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+          {scan.warnings.map((warning, i) => (
+            <div key={i} className="flex gap-2">
+              <span className="text-amber-600 flex-shrink-0">&#9888;</span>
+              <p className="text-sm text-amber-800">{warning}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="text-center">
         {scan.verdict && <VerdictBadge verdict={scan.verdict} />}
       </div>

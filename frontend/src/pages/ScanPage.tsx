@@ -89,17 +89,31 @@ export default function ScanPage() {
         ) : scan.status === 'completed' ? (
           <ScanResults scan={scan} onLoopComplete={fetchScan} />
         ) : (
-          <div className="text-center py-8">
-            <div className="text-red-600 font-medium mb-2">Scan Failed</div>
-            <p className="text-gray-600 text-sm">
-              Something went wrong during the scan. Please try again.
-            </p>
-            <Link
-              to="/"
-              className="mt-4 inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg"
-            >
-              Start a new scan
-            </Link>
+          <div className="py-8 space-y-4">
+            {scan.warnings && scan.warnings.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                {scan.warnings.map((warning, i) => (
+                  <div key={i} className="flex gap-2">
+                    <span className="text-amber-600 flex-shrink-0">&#9888;</span>
+                    <p className="text-sm text-amber-800">{warning}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="text-red-600 font-semibold mb-1">Scan Failed</div>
+              <p className="text-sm text-red-700">
+                {scan.error_message || 'Something went wrong during the scan. Please try again.'}
+              </p>
+            </div>
+            <div className="text-center">
+              <Link
+                to="/"
+                className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg"
+              >
+                Start a new scan
+              </Link>
+            </div>
           </div>
         )}
       </div>

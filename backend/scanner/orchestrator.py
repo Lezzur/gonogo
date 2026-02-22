@@ -58,13 +58,26 @@ async def run_scan(
 
         # Track auth status for synthesis
         auth_status = "no_auth_required"
+        scan_warnings = []
+
+        if recon_data.auth_wall_detected and not auth_credentials:
+            auth_status = "auth_wall_no_credentials"
+            scan_warnings.append(
+                "This site appears to require authentication (login page or password field detected) "
+                "but no credentials were provided. The scan only covers publicly visible content. "
+                "Re-run with credentials to scan authenticated pages."
+            )
+
         if auth_credentials:
-            # Check if we got authenticated pages (more than just login page)
             authenticated_pages = [p for p in recon_data.pages if '/login' not in p.url.lower() and '/signin' not in p.url.lower()]
             if authenticated_pages:
                 auth_status = "auth_successful"
             else:
                 auth_status = "auth_attempted_unclear"
+
+        if scan_warnings:
+            scan.warnings = scan_warnings
+            db.commit()
 
         await progress_manager.send_progress(
             scan_id, "step_0_recon", "Reconnaissance complete", 15

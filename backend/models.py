@@ -49,6 +49,9 @@ class Scan(Base):
     report_b_path = Column(String, nullable=True)
     screenshots_dir = Column(String, nullable=True)
 
+    # Warnings
+    warnings = Column(JSON, nullable=True)
+
     # Fix Loop fields
     fix_loop_enabled = Column(Boolean, default=False)
     fix_branch = Column(String, nullable=True)  # e.g. "gonogo/fix-<short_id>"

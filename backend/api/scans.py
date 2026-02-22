@@ -95,8 +95,10 @@ async def get_scan(scan_id: str, db: Session = Depends(get_db)):
         duration_seconds=scan.duration_seconds,
         created_at=scan.created_at,
         completed_at=scan.completed_at,
+        error_message=scan.error_message,
         report_a_available=scan.report_a_path is not None,
-        report_b_available=scan.report_b_path is not None
+        report_b_available=scan.report_b_path is not None,
+        warnings=scan.warnings
     )
 
 
@@ -129,7 +131,8 @@ async def list_scans(
                 created_at=s.created_at,
                 completed_at=s.completed_at,
                 report_a_available=s.report_a_path is not None,
-                report_b_available=s.report_b_path is not None
+                report_b_available=s.report_b_path is not None,
+                warnings=s.warnings
             )
             for s in scans
         ]

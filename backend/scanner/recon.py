@@ -984,12 +984,29 @@ async def run_reconnaissance(
 
         try:
             # Navigate to main URL first
-            main_response = await page.goto(url, wait_until="networkidle", timeout=30000)
+            try:
+                main_response = await page.goto(url, wait_until="networkidle", timeout=30000)
+            except Exception:
+                # networkidle may never fire on busy sites; fall back to domcontentloaded
+                main_response = await page.goto(url, wait_until="domcontentloaded", timeout=30000)
             initial_url = page.url
 
             # Capture response headers for security analysis
             if main_response:
                 main_response_headers = {k.lower(): v for k, v in main_response.headers.items()}
+
+            # Detect if site appears to require auth when no credentials provided
+            if not auth_credentials or not (auth_credentials.get("username") or auth_credentials.get("password")):
+                current_url = page.url.lower()
+                on_login_page = any(path in current_url for path in ['/login', '/signin', '/sign-in', '/auth', '/sso'])
+                has_login_form = False
+                if not on_login_page:
+                    password_field = await page.query_selector('input[type="password"]')
+                    if password_field and await password_field.is_visible():
+                        has_login_form = True
+                if on_login_page or has_login_form:
+                    recon_data.auth_wall_detected = True
+                    print(f"⚠️  Site appears to require authentication but no credentials were provided.")
 
             # Handle authentication if credentials provided
             if auth_credentials and (auth_credentials.get("username") or auth_credentials.get("password")):

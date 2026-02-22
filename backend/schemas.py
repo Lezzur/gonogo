@@ -55,6 +55,8 @@ class ScanResultResponse(BaseModel):
     completed_at: Optional[datetime] = None
     report_a_available: bool = False
     report_b_available: bool = False
+    error_message: Optional[str] = None
+    warnings: Optional[List[str]] = None
     # Fix loop fields
     parent_scan_id: Optional[str] = None
     current_cycle: Optional[int] = None
@@ -257,6 +259,7 @@ class ReconData(BaseModel):
     pages_shallow_crawled: int = 0
     scan_duration_seconds: float = 0.0
     security_data: Optional[SecurityData] = None
+    auth_wall_detected: bool = False
 
 
 # Intent analysis output

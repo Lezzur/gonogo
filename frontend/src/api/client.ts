@@ -24,8 +24,10 @@ export interface ScanResult {
   duration_seconds?: number
   created_at: string
   completed_at?: string
+  error_message?: string
   report_a_available: boolean
   report_b_available: boolean
+  warnings?: string[]
   parent_scan_id?: string
 }
 
