@@ -31,6 +31,7 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [startErrorDetails, setStartErrorDetails] = useState<string | null>(null)
 
   async function handleCheckPrerequisites() {
     if (!repoPath.trim()) {
@@ -46,7 +47,9 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
       const result = await checkFixLoopPrerequisites(scanId)
       setPrerequisiteCheck(result)
     } catch (err) {
-      setCheckError('Failed to check prerequisites. Please verify the repository path.')
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred'
+      setCheckError(`Failed to check prerequisites: ${errorMsg}`)
+      console.error('Prerequisite check failed:', err)
     } finally {
       setIsChecking(false)
     }
@@ -55,6 +58,7 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    setStartErrorDetails(null)
     setIsSubmitting(true)
 
     try {
@@ -85,7 +89,10 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
 
       onLoopStarted(result.loop_id)
     } catch (err) {
-      setError('Failed to start fix loop. Please check your configuration and try again.')
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred'
+      setError('Failed to start fix loop')
+      setStartErrorDetails(errorMsg)
+      console.error('Fix loop start failed:', err)
       setIsSubmitting(false)
     }
   }
@@ -103,8 +110,32 @@ export default function FixLoopConfig({ scanId, apiKey, llmProvider, onLoopStart
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-            {error}
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <svg className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1">
+                <h3 className="font-semibold text-red-800 mb-1">{error}</h3>
+                {startErrorDetails && (
+                  <div className="mt-2">
+                    <p className="text-sm text-red-700 font-medium mb-1">Error Details:</p>
+                    <pre className="text-xs text-red-700 bg-red-100 p-2 rounded border border-red-300 overflow-x-auto">
+                      {startErrorDetails}
+                    </pre>
+                  </div>
+                )}
+                <div className="mt-3 space-y-1">
+                  <p className="text-sm text-red-700 font-medium">Troubleshooting steps:</p>
+                  <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                    <li>Verify the repository path is correct</li>
+                    <li>Ensure prerequisite checks passed</li>
+                    <li>Check that your API key is valid</li>
+                    <li>Confirm the scan ID exists</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

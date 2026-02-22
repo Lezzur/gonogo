@@ -11,6 +11,8 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
   const [status, setStatus] = useState<FixLoopStatusResponse | null>(null)
   const [currentMessage, setCurrentMessage] = useState('Initializing fix loop...')
   const [error, setError] = useState('')
+  const [errorType, setErrorType] = useState<'start' | 'claude_code' | 'deploy' | 'rescan' | 'sse' | 'generic' | ''>('')
+  const [errorDetails, setErrorDetails] = useState<{ stderr?: string; details?: string } | null>(null)
   const [completionReason, setCompletionReason] = useState<string>('')
   const [expandedCycles, setExpandedCycles] = useState<Set<number>>(new Set())
   const [diff, setDiff] = useState<DiffResponse | null>(null)
@@ -19,52 +21,94 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
   const [deployUrl, setDeployUrl] = useState('')
   const [submittingDeploy, setSubmittingDeploy] = useState(false)
   const [startTime] = useState(Date.now())
+  const [sseReconnectAttempts, setSseReconnectAttempts] = useState(0)
+  const [isReconnecting, setIsReconnecting] = useState(false)
 
   useEffect(() => {
-    // Initial status fetch
-    getFixLoopStatus(scanId, loopId)
-      .then(setStatus)
-      .catch(err => setError(err.message))
+    let reconnectTimer: NodeJS.Timeout | null = null
+    let currentUnsubscribe: (() => void) | null = null
 
-    // Subscribe to SSE stream
-    const unsubscribe = streamFixLoopProgress(
-      scanId,
-      loopId,
-      (event: FixLoopEvent) => {
-        setCurrentMessage(event.message)
+    const connectToStream = () => {
+      // Initial status fetch
+      getFixLoopStatus(scanId, loopId)
+        .then(setStatus)
+        .catch(err => {
+          setError(err instanceof Error ? err.message : 'Failed to load fix loop status')
+          setErrorType('generic')
+        })
 
-        if (event.type === 'cycle_complete') {
-          // Refresh full status to get updated cycle info
-          getFixLoopStatus(scanId, loopId).then(setStatus)
-        }
-      },
-      (finalStatus: FixLoopStatusResponse) => {
-        setStatus(finalStatus)
+      // Subscribe to SSE stream
+      currentUnsubscribe = streamFixLoopProgress(
+        scanId,
+        loopId,
+        (event: FixLoopEvent) => {
+          setCurrentMessage(event.message)
+          setSseReconnectAttempts(0) // Reset on successful message
+          setIsReconnecting(false)
 
-        // Determine completion reason
-        if (finalStatus.status === 'completed') {
-          const lastCycle = finalStatus.cycles[finalStatus.cycles.length - 1]
-          if (lastCycle?.verdict_after === 'GO') {
-            setCompletionReason('verdict_reached')
-          } else if (finalStatus.current_cycle >= finalStatus.max_cycles) {
-            setCompletionReason('max_cycles')
+          if (event.type === 'cycle_complete') {
+            // Refresh full status to get updated cycle info
+            getFixLoopStatus(scanId, loopId).then(setStatus)
           }
-        } else if (finalStatus.status === 'stopped') {
-          setCompletionReason('user_stopped')
-        } else if (finalStatus.status === 'failed') {
+
+          // Detect specific error types from event messages
+          if (event.type === 'error') {
+            if (event.message.includes('Claude Code')) {
+              setErrorType('claude_code')
+            } else if (event.message.includes('deploy')) {
+              setErrorType('deploy')
+            } else if (event.message.includes('rescan')) {
+              setErrorType('rescan')
+            }
+          }
+        },
+        (finalStatus: FixLoopStatusResponse) => {
+          setStatus(finalStatus)
+
+          // Determine completion reason
+          if (finalStatus.status === 'completed') {
+            const lastCycle = finalStatus.cycles[finalStatus.cycles.length - 1]
+            if (lastCycle?.verdict_after === 'GO') {
+              setCompletionReason('verdict_reached')
+            } else if (finalStatus.current_cycle >= finalStatus.max_cycles) {
+              setCompletionReason('max_cycles')
+            }
+          } else if (finalStatus.status === 'stopped') {
+            setCompletionReason('user_stopped')
+          } else if (finalStatus.status === 'failed') {
+            setCompletionReason('error')
+          }
+
+          onComplete()
+        },
+        (errorMessage: string) => {
+          setError(errorMessage)
+          setErrorType('sse')
           setCompletionReason('error')
+
+          // Attempt to reconnect with exponential backoff
+          const maxAttempts = 5
+          if (sseReconnectAttempts < maxAttempts) {
+            const backoffMs = Math.min(1000 * Math.pow(2, sseReconnectAttempts), 30000)
+            setIsReconnecting(true)
+            setSseReconnectAttempts(prev => prev + 1)
+
+            reconnectTimer = setTimeout(() => {
+              console.log(`Attempting SSE reconnect (${sseReconnectAttempts + 1}/${maxAttempts})`)
+              connectToStream()
+            }, backoffMs)
+          }
         }
+      )
+    }
 
-        onComplete()
-      },
-      (errorMessage: string) => {
-        setError(errorMessage)
-        setCompletionReason('error')
-      }
-    )
+    connectToStream()
 
-    return unsubscribe
-  }, [scanId, loopId, onComplete])
+    return () => {
+      if (currentUnsubscribe) currentUnsubscribe()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+    }
+  }, [scanId, loopId, onComplete, sseReconnectAttempts])
 
   const toggleCycleExpanded = (cycleNumber: number) => {
     setExpandedCycles(prev => {
@@ -113,22 +157,131 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
     }
 
     setSubmittingDeploy(true)
+    setError('')
+    setErrorType('')
     try {
       await advanceFixLoop(scanId, loopId)
       setDeployUrl('')
       setCurrentMessage('Rescanning deployed site...')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to continue fix loop')
+      const errorMsg = err instanceof Error ? err.message : 'Failed to continue fix loop'
+      setError(errorMsg)
+      setErrorType('deploy')
+      setErrorDetails({ details: errorMsg })
     } finally {
       setSubmittingDeploy(false)
     }
   }
 
-  if (error) {
+  // Error Banner Component
+  const ErrorBanner = () => {
+    if (!error) return null
+
+    const getErrorTitle = () => {
+      switch (errorType) {
+        case 'start': return 'Failed to Start Fix Loop'
+        case 'claude_code': return 'Claude Code Session Failed'
+        case 'deploy': return 'Deploy Failed'
+        case 'rescan': return 'Rescan Failed'
+        case 'sse': return 'Connection Lost'
+        default: return 'Fix Loop Error'
+      }
+    }
+
+    const getErrorActions = () => {
+      switch (errorType) {
+        case 'claude_code':
+          return (
+            <div className="mt-3 space-y-1">
+              <p className="text-sm text-red-700 font-medium">Possible causes:</p>
+              <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Claude Code API key is invalid or expired</li>
+                <li>Insufficient permissions in the repository</li>
+                <li>Code fixes created syntax errors or breaking changes</li>
+                <li>Claude Code rate limit exceeded</li>
+              </ul>
+              <p className="text-sm text-red-700 mt-2 font-medium">Next steps:</p>
+              <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Check the Claude Code session logs for details</li>
+                <li>Verify your API key is valid</li>
+                <li>Review file permissions in the repository</li>
+                <li>Try reducing the scope (fewer severity levels)</li>
+              </ul>
+            </div>
+          )
+        case 'deploy':
+          return (
+            <div className="mt-3 space-y-2">
+              {errorDetails?.stderr && (
+                <div>
+                  <p className="text-sm text-red-700 font-medium mb-1">Command output:</p>
+                  <pre className="text-xs text-red-700 bg-red-100 p-2 rounded border border-red-300 overflow-x-auto max-h-40">
+                    {errorDetails.stderr}
+                  </pre>
+                </div>
+              )}
+              <p className="text-sm text-red-700 font-medium">You can continue manually:</p>
+              <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Deploy the branch manually using your preferred method</li>
+                <li>Enter the deployed URL below to continue the fix loop</li>
+                <li>Or fix the deploy command configuration and restart</li>
+              </ul>
+            </div>
+          )
+        case 'rescan':
+          return (
+            <div className="mt-3 space-y-1">
+              <p className="text-sm text-red-700 font-medium">Possible causes:</p>
+              <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Deploy URL is not accessible or returning errors</li>
+                <li>Site is still deploying (not ready yet)</li>
+                <li>Network connectivity issues</li>
+              </ul>
+              <p className="text-sm text-red-700 mt-2 font-medium">Next steps:</p>
+              <ul className="text-sm text-red-700 list-disc list-inside space-y-1">
+                <li>Verify the deployed URL is accessible in your browser</li>
+                <li>Wait a few moments and try submitting the URL again</li>
+                <li>Check deployment logs for errors</li>
+              </ul>
+            </div>
+          )
+        case 'sse':
+          return (
+            <div className="mt-3 space-y-1">
+              {isReconnecting && (
+                <div className="flex items-center gap-2 text-sm text-red-700">
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Attempting to reconnect... (attempt {sseReconnectAttempts}/5)
+                </div>
+              )}
+              <p className="text-sm text-red-700 font-medium">Connection to fix loop lost</p>
+              <p className="text-sm text-red-700">The fix loop may still be running. Try refreshing the page to reconnect.</p>
+            </div>
+          )
+        default:
+          return (
+            <p className="text-sm text-red-700 mt-2">
+              Check the console logs for more details. You may need to restart the fix loop.
+            </p>
+          )
+      }
+    }
+
     return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-        <h3 className="text-lg font-semibold text-red-800 mb-2">Fix Loop Failed</h3>
-        <p className="text-red-700">{error}</p>
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+        <div className="flex items-start gap-3">
+          <svg className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="flex-1">
+            <h3 className="font-semibold text-red-800 mb-1">{getErrorTitle()}</h3>
+            <p className="text-sm text-red-700">{error}</p>
+            {getErrorActions()}
+          </div>
+        </div>
       </div>
     )
   }
@@ -168,6 +321,9 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
 
   return (
     <div className="space-y-6">
+      {/* Error Banner */}
+      <ErrorBanner />
+
       {/* Live Status */}
       <div className="text-center">
         {isRunning && (
@@ -229,26 +385,50 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
         })}
       </div>
 
-      {/* Manual Deploy Prompt */}
-      {awaitingDeploy && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="font-semibold text-yellow-800 mb-2">Manual Deploy Required</h3>
-          <p className="text-sm text-yellow-700 mb-3">
-            Please deploy the fixes and provide the URL to continue the rescan.
+      {/* Manual Deploy Prompt or Deploy Error Fallback */}
+      {(awaitingDeploy || errorType === 'deploy') && (
+        <div className={`border rounded-lg p-4 ${
+          errorType === 'deploy' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'
+        }`}>
+          <h3 className={`font-semibold mb-2 ${
+            errorType === 'deploy' ? 'text-red-800' : 'text-yellow-800'
+          }`}>
+            {errorType === 'deploy' ? 'Deploy Failed - Manual Intervention Required' : 'Manual Deploy Required'}
+          </h3>
+          <p className={`text-sm mb-3 ${
+            errorType === 'deploy' ? 'text-red-700' : 'text-yellow-700'
+          }`}>
+            {errorType === 'deploy'
+              ? 'The automated deploy command failed. Deploy the fixes manually and provide the URL to continue.'
+              : 'Please deploy the fixes and provide the URL to continue the rescan.'}
           </p>
+          {errorType === 'deploy' && status?.branch_name && (
+            <div className="mb-3 p-2 bg-red-100 rounded border border-red-300">
+              <p className="text-xs text-red-700 font-medium mb-1">Branch to deploy:</p>
+              <code className="text-xs text-red-800 font-mono">{status.branch_name}</code>
+            </div>
+          )}
           <div className="flex gap-2">
             <input
               type="url"
               value={deployUrl}
               onChange={(e) => setDeployUrl(e.target.value)}
               placeholder="https://your-preview-url.com"
-              className="flex-1 px-3 py-2 border border-yellow-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500"
+              className={`flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
+                errorType === 'deploy'
+                  ? 'border-red-300 focus:ring-red-500'
+                  : 'border-yellow-300 focus:ring-yellow-500'
+              }`}
               disabled={submittingDeploy}
             />
             <button
               onClick={handleDeploySubmit}
               disabled={submittingDeploy || !deployUrl.trim()}
-              className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`px-4 py-2 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                errorType === 'deploy'
+                  ? 'bg-red-600 hover:bg-red-700'
+                  : 'bg-yellow-600 hover:bg-yellow-700'
+              }`}
             >
               {submittingDeploy ? 'Continuing...' : 'Continue'}
             </button>
@@ -256,7 +436,9 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
         </div>
       )}
 
-      {/* Running Totals */}
+      {/* Running Totals - Always visible even on error if we have status */}
+      {status && (
+        <>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="text-sm text-gray-600 mb-1">Findings Fixed</div>
@@ -344,52 +526,75 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
               </svg>
             </button>
 
-            {expandedCycles.has(cycle.cycle_number) && cycle.status === 'completed' && (
+            {expandedCycles.has(cycle.cycle_number) && (
               <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
-                <div className="grid grid-cols-2 gap-4 pt-3">
-                  <div>
-                    <div className="text-xs text-gray-600">Delta</div>
-                    <div className="text-sm font-medium text-gray-900">
-                      ✓ {cycle.findings_fixed || 0} fixed
-                      {(cycle.findings_introduced || 0) > 0 && ` | ⚠ ${cycle.findings_introduced} new`}
-                      {(cycle.findings_unchanged || 0) > 0 && ` | — ${cycle.findings_unchanged} unchanged`}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600">Score Change</div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {cycle.score_after || 'N/A'}
-                      {cycle.cycle_number > 1 && status.cycles[cycle.cycle_number - 2]?.score_after && (
-                        <span className="text-green-600 ml-1">
-                          (+{(cycle.score_after || 0) - (status.cycles[cycle.cycle_number - 2].score_after || 0)})
-                        </span>
+                {cycle.status === 'failed' && (
+                  <div className="pt-3 pb-2">
+                    <div className="bg-red-50 border border-red-200 rounded p-3">
+                      <p className="text-sm text-red-800 font-medium mb-1">Cycle Failed</p>
+                      <p className="text-xs text-red-700">
+                        This cycle encountered an error and could not complete. Check the error details above.
+                      </p>
+                      {cycle.claude_code_session_id && (
+                        <div className="mt-2 pt-2 border-t border-red-200">
+                          <p className="text-xs text-red-700 mb-1">Claude Code Session ID:</p>
+                          <code className="text-xs font-mono text-red-800 bg-red-100 px-1 py-0.5 rounded">
+                            {cycle.claude_code_session_id}
+                          </code>
+                          <p className="text-xs text-red-600 mt-1">
+                            Review this session's logs for detailed error information.
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs text-gray-600">Cost</div>
-                    <div className="text-sm font-medium text-gray-900">
-                      ${(cycle.claude_code_cost_usd || 0).toFixed(2)}
+                )}
+                {cycle.status === 'completed' && (
+                  <div className="grid grid-cols-2 gap-4 pt-3">
+                    <div>
+                      <div className="text-xs text-gray-600">Delta</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        ✓ {cycle.findings_fixed || 0} fixed
+                        {(cycle.findings_introduced || 0) > 0 && ` | ⚠ ${cycle.findings_introduced} new`}
+                        {(cycle.findings_unchanged || 0) > 0 && ` | — ${cycle.findings_unchanged} unchanged`}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600">Score Change</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {cycle.score_after || 'N/A'}
+                        {cycle.cycle_number > 1 && status.cycles[cycle.cycle_number - 2]?.score_after && (
+                          <span className="text-green-600 ml-1">
+                            (+{(cycle.score_after || 0) - (status.cycles[cycle.cycle_number - 2].score_after || 0)})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600">Cost</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        ${(cycle.claude_code_cost_usd || 0).toFixed(2)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600">Duration</div>
+                      <div className="text-sm font-medium text-gray-900">
+                        {cycle.completed_at && cycle.started_at
+                          ? `${Math.floor((new Date(cycle.completed_at).getTime() - new Date(cycle.started_at).getTime()) / 60000)}m ${Math.floor(((new Date(cycle.completed_at).getTime() - new Date(cycle.started_at).getTime()) % 60000) / 1000)}s`
+                          : 'N/A'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600">Files Modified</div>
+                      <div className="text-sm font-medium text-gray-900">{cycle.files_modified || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-600">Verdict After</div>
+                      <div className="text-sm font-medium text-gray-900">{cycle.verdict_after || 'N/A'}</div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs text-gray-600">Duration</div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {cycle.completed_at && cycle.started_at
-                        ? `${Math.floor((new Date(cycle.completed_at).getTime() - new Date(cycle.started_at).getTime()) / 60000)}m ${Math.floor(((new Date(cycle.completed_at).getTime() - new Date(cycle.started_at).getTime()) % 60000) / 1000)}s`
-                        : 'N/A'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600">Files Modified</div>
-                    <div className="text-sm font-medium text-gray-900">{cycle.files_modified || 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-600">Verdict After</div>
-                    <div className="text-sm font-medium text-gray-900">{cycle.verdict_after || 'N/A'}</div>
-                  </div>
-                </div>
-                {cycle.claude_code_session_id && (
+                )}
+                {cycle.status === 'completed' && cycle.claude_code_session_id && (
                   <div className="pt-2 border-t border-gray-100">
                     <div className="text-xs text-gray-600 mb-1">Claude Code Session</div>
                     <div className="text-xs font-mono text-gray-500">{cycle.claude_code_session_id}</div>
@@ -455,6 +660,9 @@ export default function FixLoopProgress({ scanId, loopId, onComplete }: FixLoopP
             <span className="text-red-600">-{diff.total_deletions}</span>
           </div>
         </div>
+      )}
+
+        </>
       )}
 
       {/* Completion Message */}
